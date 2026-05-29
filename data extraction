@@ -71,21 +71,37 @@ def main(radstart, end_percent,end_steps,datanum,time_start,time_end):
             # check for length of rad - continue while photon is above 25% of start
             while j + 1 < listlength:
                 j += 1
-                if photon[j] > photon[i+1] * end_percent:  # Check next point
+                if photon[j] > photon[i+1] * end_percent:
                     length += 1
                     radlist.append(photon[j])
                     radlist_index.append(j)
                 else:
-                    for k in range(1,end_steps +3):
-                        if j+k < listlength:
+                    # Add the point where condition failed
+                    length += 1
+                    radlist.append(photon[j])
+                    radlist_index.append(j)
+                    
+                    # Add extra points after the failure
+                    for k in range(1, end_steps + 3):
+                        if j + k < listlength:
                             length += 1
-                            radlist.append(photon[j+k])
-                            radlist_index.append(j+k)
-                    break
+                            radlist.append(photon[j + k])
+                            radlist_index.append(j + k)
+                    break  # Break out of the while loop AFTER adding extra points
             
             # Only process if we have at least the starting point
             if len(radlist) > 0:
                 time_values = [time[idx] for idx in radlist_index]
+
+
+                print(f"\nEvent at time {time[i]}:")
+                print(f"  radlist: {radlist}")
+                print(f"  Length of radlist: {len(radlist)}")
+                print(f"  Simple sum: {sum(radlist)}")
+                print(f"  Time values: {time_values}")
+                print(f"  Trapezoidal (should be close to simple sum): {np.trapezoid(radlist, time_values)}")
+
+
                 trapezoidal_sum = np.trapezoid(radlist, time_values)
                 
                 big = max(radlist)
@@ -271,5 +287,5 @@ def main(radstart, end_percent,end_steps,datanum,time_start,time_end):
             f.write(f"{s:>8} {l:>13} {t:>12.2f} {m:>10.2f}\n")
     print(f'Data saved to {output_path}')
 
-main(3000, 0.25,2,'11',900,3670)
+main(3000, 0.25,2,'6',0,5000)
 ` ` `
