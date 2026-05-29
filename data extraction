@@ -1,0 +1,275 @@
+DATA EXTRACTION
+```python
+import matplotlib.pyplot as plt
+import numpy as np
+
+def main(radstart, end_percent,end_steps,datanum,time_start,time_end):
+    file = open(rf'C:\Users\lukes\Videos\Captures\data{datanum}-10-01-24.txt', 'r')
+    time=[]
+    photon=[]
+
+    #extract data
+    with open(rf'C:\Users\lukes\Videos\Captures\data{datanum}-10-01-24.txt', 'r') as file:
+        line_number = 0
+        for line in file:
+            if line.startswith('%'):
+                continue
+            line_number += 1
+            
+            if line_number < time_start:
+                continue  # Skip lines before time_start
+            
+            if line_number > time_end:
+                break  # Stop reading after time_end
+            
+            parts = line.split()
+            if len(parts) == 2:
+                time.append(int(parts[0]))
+                photon.append(int(parts[1]))
+
+#check for average background level before first radiation 
+    int_photon = []
+    inital=0
+    loop=0
+    while inital==0:
+        if photon[loop+1] - photon[loop] < radstart:
+           int_photon.append(photon[loop]) 
+           loop+=1
+        else:
+            inital=1
+    average = round(sum(int_photon) / len(int_photon),2)
+    print(f'Using average noise level: {average}')
+    photon_adj = [r - average if r > average else 0 for r in photon]
+    #adjust photon values 
+    photon=photon_adj
+
+    #round photon list 
+    photon = [round(x, 2) for x in photon]
+
+    #initialize lists
+    listlength=len(photon)
+    radtime=[]
+    rad=[]
+    radlength=[]
+    radmax=[]
+    skiplist=[(listlength-1)]
+    radmax_index = []
+          
+    # scan through data
+    for i in range(listlength - 1):
+        if i in skiplist:
+            continue
+        
+        # search for rad spikes 
+        if photon[i+1] - photon[i] > radstart:
+            radlist = [photon[i]]  # Start with the first point
+            radlist_index = [i]
+            length = 1
+            radtime.append(time[i])
+            j = i
+            
+            # check for length of rad - continue while photon is above 25% of start
+            while j + 1 < listlength:
+                j += 1
+                if photon[j] > photon[i+1] * end_percent:  # Check next point
+                    length += 1
+                    radlist.append(photon[j])
+                    radlist_index.append(j)
+                else:
+                    for k in range(1,end_steps +3):
+                        if j+k < listlength:
+                            length += 1
+                            radlist.append(photon[j+k])
+                            radlist_index.append(j+k)
+                    break
+            
+            # Only process if we have at least the starting point
+            if len(radlist) > 0:
+                time_values = [time[idx] for idx in radlist_index]
+                trapezoidal_sum = np.trapezoid(radlist, time_values)
+                
+                big = max(radlist)
+                rad.append(round(trapezoidal_sum, 2))
+                radmax_index.append(radlist_index[radlist.index(big)])
+                radlength.append(length)
+                radmax.append(round(big, 2))
+                
+                for k in range(length):
+                    skiplist.append(i + k)
+
+    #ask if they want to show max and integrals           
+    rmax=0
+    while rmax==0:
+            show=input('Would you like to show maximum point? ')
+            if show=='Yes' or show=='yes'or show=='Y'or show=='YES' or show=='y':
+                show_max=True
+                rmax=1
+            elif show=='NO' or show=='no' or show=='No' or show=='N' or show=='n':
+                show_max=False
+                rmax=1
+            else:
+                print('input not understood')
+    rint=0
+    while rint==0:
+            show=input('Would you like to show total photons? ')
+            if show=='Yes' or show=='yes'or show=='Y'or show=='YES' or show=='y':
+                show_int=True
+                rint=1
+            elif show=='NO' or show=='no' or show=='No' or show=='N' or show=='n':
+                show_int=False
+                rint=1
+            else:
+                print('input not understood')
+
+    #round data 
+    rad = [round(x, 2) for x in rad]
+    radmax = [round(x, 2) for x in radmax]
+
+    #graph data 
+    g=0
+    start=0
+    end=listlength
+    while g == 0:
+        def graph_data(datanum):       
+            plt.plot(time[start:end], photon[start:end],'k-')
+            # Add red bars at radiation start points
+            for idx, rt in enumerate(radtime):
+                try:
+                    time_index = time.index(rt)
+                    if start <= time_index <= end:
+                        rad_len = radlength[idx]
+                        bar_end = time_index + rad_len
+                        if bar_end <= end: 
+                            plt.hlines(y=min(photon[start:end]) * 0.95, 
+                                    xmin=rt, xmax=time[bar_end], 
+                                    color='red', linewidth=3, alpha=0.7)
+                            plt.plot(rt, photon[time_index], 'r^', markersize=6)
+
+                            # Get event data
+                            event_start_idx = time_index
+                            event_end_idx = bar_end
+                            event_times = time[event_start_idx:event_end_idx+1]
+                            event_photons = photon[event_start_idx:event_end_idx+1]
+                            
+                            # Find the ACTUAL peak position within the event
+                            peak_idx_in_event = event_photons.index(max(event_photons))
+                            peak_time = event_times[peak_idx_in_event]
+                            peak_photon = event_photons[peak_idx_in_event]
+                            
+                            # Get the start time of the event
+                            start_time = rt
+                            start_photon = photon[time_index]
+                            
+                            # add shading for integral
+                            if show_int:
+                                plt.fill_between(event_times, 0, event_photons,
+                                                color='green', alpha=0.3,
+                                                label='Radiation Event' if idx == 0 else '')
+                            
+                                # Integration value (stored total) - show to the RIGHT of peak (rounded to whole number)
+                                stored_total = round(rad[idx], 0)
+                                
+                                # Only show detailed annotations when zoomed in enough
+                                if (end - start) < 501:
+                                    plt.annotate(f'{stored_total:.0f}', 
+                                            xy=(peak_time, peak_photon),
+                                            xytext=(10, 0),
+                                            textcoords='offset points',
+                                            fontsize=7,
+                                            color='green',
+                                            alpha=0.8,
+                                            ha='left')
+                                else:
+                                    plt.plot(peak_time, peak_photon, 'g.', markersize=4, alpha=0.5)
+                            
+                            # Add dot at max point of the spike (always show if show_max)
+                            if show_max:
+                                plt.plot(peak_time, peak_photon, 'm*', markersize=5)
+                                
+                                # Max value - show ABOVE the peak (at the top)
+                                max_value = round(peak_photon, 0)
+                                
+                                if (end - start) < 501:
+                                    plt.annotate(f'{max_value:.0f}', 
+                                            xy=(peak_time, peak_photon),
+                                            xytext=(0, 10),
+                                            textcoords='offset points',
+                                            fontsize=7,
+                                            color='magenta',
+                                            alpha=0.8,
+                                            ha='center')
+                                else:
+                                    plt.plot(peak_time, peak_photon, 'm.', markersize=4, alpha=0.5)                   
+                except ValueError:
+                    pass
+                
+            plt.xlabel('Time')
+            plt.ylabel('Photon Intensity')
+            plt.title(f'Data {datanum}', fontweight='bold')
+            plt.gca().set_facecolor("#7ac5cf8e")
+            plt.gcf().set_facecolor('lightgray')
+            plt.ticklabel_format(axis='y', style='sci', scilimits=(0,0))
+            plt.show()
+
+        graph_data(datanum)
+
+
+        
+        #zoom controls
+        z=0
+        while z==0:
+            zoom=input('Would you like to adjust window? ')
+            if zoom=='Yes' or zoom=='yes'or zoom=='Y'or zoom=='YES' or zoom=='y':
+                s=0
+                e=0
+                z=1
+            elif zoom=='NO' or zoom=='no' or zoom=='No' or zoom=='N' or zoom=='n':
+                s=1
+                g=1
+                z=1
+                e=1
+            else:
+                print('input not understood')
+
+        while s==0:
+            inone=input('Input start time (time value): ')
+            try:
+                start_time_val = int(inone)
+                if start_time_val in time:
+                    start = time.index(start_time_val)  # Store as INDEX
+                    s=1
+                else:
+                    print('invalid start time')
+            except:
+                print('invalid start time')
+                
+        while e==0:
+            intwo=input('Input end time (time value): ')
+            try:
+                end_time_val = int(intwo)
+                if end_time_val in time and end_time_val >= time[start]:
+                    end = time.index(end_time_val)  # Store as INDEX
+                    e=1
+                else:
+                    print('invalid end time')
+            except:
+                print('invalid end time')
+
+    #print results        
+    #print('start',radtime)
+    #print('length',radlength)
+    #print('total',rad)
+    #print('max',radmax)
+
+    #make .txt file 
+    output_path = rf'C:\Users\lukes\Videos\Captures\radiation_data_{datanum}.txt'
+    with open(output_path, 'w') as f:
+        f.write(f"{'Start':^8} {'Irradiation':^13} {'Total':^12} {'Max':^10}\n")
+        f.write(f"{'time':^8} {'time(sec)':^13} {'Photons':^12} {'Photons':^10}\n")
+        f.write("-" * 45 + "\n")
+        for s, l, t, m in zip(radtime, radlength, rad, radmax):
+            f.write(f"{s:>8} {l:>13} {t:>12.2f} {m:>10.2f}\n")
+    print(f'Data saved to {output_path}')
+
+main(3000, 0.25,2,'11',900,3670)
+` ` `
