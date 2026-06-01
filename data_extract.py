@@ -1,0 +1,474 @@
+import matplotlib.pyplot as plt
+import numpy as np
+import openpyxl
+from openpyxl import Workbook, load_workbook
+
+def main(detector,radstart, end_percent,end_steps,datanum,time_start,time_end,graph):
+    file = open(rf'C:\Users\lukes\Videos\Captures\data{datanum}-10-01-24.txt', 'r')
+    time=[]
+    photon=[]
+
+    #extract data from txt file
+    with open(rf'C:\Users\lukes\Videos\Captures\data{datanum}-10-01-24.txt', 'r') as file:
+        line_number = 0
+        for line in file:
+            if line.startswith('%'):
+                continue
+            line_number += 1
+            
+            if line_number < time_start:
+                continue  # Skip lines before time_start
+            
+            if line_number > time_end:
+                break  # Stop reading after time_end
+            
+            parts = line.split()
+            if len(parts) == 2:
+                time.append(int(parts[0]))
+                photon.append(int(parts[1]))
+
+#check for average background level before first radiation 
+    int_photon = []
+    inital=0
+    loop=0
+    while inital==0:
+        if photon[loop+1] - photon[loop] < radstart:#checks for rad spike 
+           int_photon.append(photon[loop]) 
+           loop+=1
+        else:
+            inital=1
+    average = round(sum(int_photon) / len(int_photon),2)
+    print(f'Using average noise level: {average}')
+    photon_adj = [r - average if r > average else 0 for r in photon]
+    #adjust photon values 
+    photon=photon_adj
+
+    #round photon list 
+    photon = [round(x, 2) for x in photon]
+
+    #initialize lists
+    listlength=len(photon)
+    radtime=[]
+    rad=[]
+    radlength=[]
+    radmax=[]
+    skiplist=[(listlength-1)]
+    radmax_index = []
+          
+    # scan through data
+    def data_scan():
+        for i in range(listlength - 1):
+            if i in skiplist:
+                continue
+            
+            # search for rad spikes 
+            if photon[i+1] - photon[i] > radstart:
+                radlist = [photon[i]]
+                radlist_index = [i]
+                length = 1
+                radtime.append(time[i])
+                j = i
+                
+                # check for length of rad and max rad point - continue while photon is above 25% of start
+                while j + 1 < listlength:
+                    j += 1
+                    if photon[j] > photon[i+1] * end_percent:
+                        length += 1
+                        radlist.append(photon[j])
+                        radlist_index.append(j)
+                    else:
+                        # Add the point where condition failed
+                        length += 1
+                        radlist.append(photon[j])
+                        radlist_index.append(j)
+                        
+                        # Add extra points after the failure
+                        for k in range(1, end_steps + 1):
+                            if j + k < listlength:
+                                length += 1
+                                radlist.append(photon[j + k])
+                                radlist_index.append(j + k)
+                        break  # Break out of the while loop AFTER adding extra points
+                
+                # Only process if we have at least the starting point
+                if len(radlist) > 0:
+                    time_values = [time[idx] for idx in radlist_index]
+                    trapezoidal_sum = np.trapezoid(radlist, time_values)#trapizoidal integration to get total photons               
+                    big = max(radlist)
+                    rad.append(round(trapezoidal_sum, 2))
+                    radmax_index.append(radlist_index[radlist.index(big)])
+                    radlength.append(length)
+                    radmax.append(round(big, 2))
+                    
+                    for k in range(length):
+                        skiplist.append(i + k) #skip the points in the rad event when scanning
+    data_scan()
+
+    def exel(detector):
+        dose_list = []
+        book = load_workbook('exel_data.xlsx')
+        if detector == 1:
+            sheet = book['Det1']
+            for i in range(15, 103):
+                cell = sheet[f'C{i}']
+                value = cell.value       
+                if isinstance(value, (int, float)):
+                    dose_list.append(value)
+        if detector == 2:
+            sheet = book['Det2']
+            for i in range(7, 100):
+                cell = sheet[f'C{i}']
+                value = cell.value       
+                if isinstance(value, (int, float)):
+                    dose_list.append(value)
+        return dose_list
+    dose_list = exel(detector)
+
+    #ask if they want to show max and integrals
+    def options():
+        global show_max       
+        rmax=0
+        while rmax==0:
+                show=input('Would you like to show maximum point? ')
+                if show=='Yes' or show=='yes'or show=='Y'or show=='YES' or show=='y':
+                    show_max=True
+                    rmax=1
+                elif show=='NO' or show=='no' or show=='No' or show=='N' or show=='n':
+                    show_max=False
+                    rmax=1
+                else:
+                    print('input not understood')
+    if graph=='photon':
+        options() 
+        show_int = True
+
+    #round data 
+    rad = [round(x, 2) for x in rad]
+    radmax = [round(x, 2) for x in radmax]
+
+    #graph data
+    def total_photon_graph(datanum):   #graph of time vs photon intesity
+            plt.plot(time[start:end], photon[start:end],'k*')
+            # Add red bars at radiation start points
+            for idx, rt in enumerate(radtime):
+                try:
+                    time_index = time.index(rt)
+                    if start <= time_index <= end:
+                        rad_len = radlength[idx]
+                        bar_end = time_index + rad_len
+                        if bar_end < len(time) and bar_end <= end:  
+                            plt.hlines(y=min(photon[start:end]) * 0.95, 
+                                    xmin=rt, xmax=time[bar_end], 
+                                    color='red', linewidth=3, alpha=0.7)
+                            plt.plot(rt, photon[time_index], 'r^', markersize=6)
+
+                            # Get event data
+                            event_start_idx = time_index
+                            event_end_idx = bar_end
+                            event_times = time[event_start_idx:event_end_idx+1]
+                            event_photons = photon[event_start_idx:event_end_idx+1]
+                            
+                            # Find the ACTUAL peak position within the event
+                            peak_idx_in_event = event_photons.index(max(event_photons))
+                            peak_time = event_times[peak_idx_in_event]
+                            peak_photon = event_photons[peak_idx_in_event]
+                            
+                            # Get the start time of the event
+                            start_time = rt
+                            start_photon = photon[time_index]
+                            
+                            # add shading for integral
+                            if show_int:
+                                plt.fill_between(event_times, 0, event_photons,
+                                                color='green', alpha=0.3,
+                                                label='Radiation Event' if idx == 0 else '')
+                            
+                                # Integration value (stored total) - show to the RIGHT of peak (rounded to whole number)
+                                stored_total = round(rad[idx], 0)
+                                
+                                # Only show detailed annotations when zoomed in enough
+                                if (end - start) < 501:
+                                    plt.annotate(f'{stored_total:.0f}', 
+                                            xy=(peak_time, peak_photon),
+                                            xytext=(10, 0),
+                                            textcoords='offset points',
+                                            fontsize=7,
+                                            color='green',
+                                            alpha=0.8,
+                                            ha='left')
+                                else:
+                                    plt.plot(peak_time, peak_photon, 'g.', markersize=4, alpha=0.5)
+                            
+                            # Add dot at max point of the spike (always show if show_max)
+                            if show_max:
+                                plt.plot(peak_time, peak_photon, 'm*', markersize=5)
+                                
+                                # Max value - show ABOVE the peak (at the top)
+                                max_value = round(peak_photon, 0)
+                                
+                                if (end - start) < 501:
+                                    plt.annotate(f'{max_value:.0f}', 
+                                            xy=(peak_time, peak_photon),
+                                            xytext=(0, 10),
+                                            textcoords='offset points',
+                                            fontsize=7,
+                                            color='magenta',
+                                            alpha=0.8,
+                                            ha='center')
+                                else:
+                                    plt.plot(peak_time, peak_photon, 'm.', markersize=4, alpha=0.5)                   
+                except ValueError:
+                    pass
+                
+            plt.xlabel('Time')
+            plt.ylabel('Photon Intensity')
+            plt.title(f'Data {datanum}', fontweight='bold')
+            plt.gca().set_facecolor("#7ac5cf8e")
+            plt.gcf().set_facecolor('lightgray')
+            plt.ticklabel_format(axis='y', style='sci', scilimits=(0,0))
+            plt.show()
+   
+    def dose(dose_list, rad):
+        # Manually define block ranges based on your data
+        if detector == 1:
+            blocks = [
+                (0, 14),      # Block 1
+                (14, 29),     # Block 2
+                (29, 44),     # Block 3 
+                (44, 62),     # Block 4
+                (62, 81),     # Block 5  
+            ]
+        if detector == 2:
+            blocks = [
+                (0, 21),      # Block 1
+                (21, 36),     # Block 2
+                (36, 51),     # Block 3 
+                (51, 69),     # Block 4
+                (69, 85),     # Block 5  
+            ]
+        
+        # While loop for viewing multiple blocks
+        view_more = True
+        while view_more:
+            print(f"Available blocks: 1 to {len(blocks)}")
+            print("Enter 0 to view all blocks")
+            
+            block_choice = -1
+            while block_choice < 0 or block_choice > len(blocks):
+                try:
+                    block_choice = int(input(f"Which block would you like to see? (1-{len(blocks)} or 0 for all): "))
+                    if block_choice < 0 or block_choice > len(blocks):
+                        print(f"Invalid choice. Please enter a number between 0 and {len(blocks)}")
+                except ValueError:
+                    print("Invalid input. Please enter a number.")
+            
+            # Process and plot selected blocks
+            blocks_to_plot = range(len(blocks)) if block_choice == 0 else [block_choice - 1]
+            
+            for block_num in blocks_to_plot:
+                start, end = blocks[block_num]
+                block_doses = dose_list[start:end]
+                block_rad = rad[start:end]
+                
+                # Average the rad values for repeated doses in this block
+                unique_doses = []
+                averaged_photons = []
+                
+                seen = {}
+                order = []
+                
+                for i, d in enumerate(block_doses):
+                    if d not in seen:
+                        seen[d] = []
+                        order.append(d)
+                    seen[d].append(block_rad[i])
+                
+                # Calculate averages in original order
+                for dose_value in order:
+                    unique_doses.append(dose_value)
+                    avg = sum(seen[dose_value]) / len(seen[dose_value])
+                    averaged_photons.append(avg)
+                
+                # Calculate line of best fit (linear regression)
+                x = np.array(unique_doses)
+                y = np.array(averaged_photons)
+
+                # Only add line of best fit if we have at least 2 points
+                if len(x) >= 2:
+                    # Fit a line: y = m*x + b
+                    m, b = np.polyfit(x, y, 1)
+                    
+                    # Create the trend line
+                    x_trend = np.array([min(x), max(x)])
+                    y_trend = m * x_trend + b
+                    
+                    # Calculate R-squared value correctly
+                    y_pred = m * x + b
+                    ss_res = np.sum((y - y_pred) ** 2)
+                    ss_tot = np.sum((y - np.mean(y)) ** 2)
+                    
+                    # Avoid division by zero
+                    if ss_tot > 1e-10:  # Small threshold to avoid floating point issues
+                        r_squared = 1 - (ss_res / ss_tot)
+                    else:
+                        r_squared = 1.0
+                    
+                    # Plot with trend line
+                    plt.plot(unique_doses, averaged_photons, 'k*', markersize=12, label='Data points')
+                    plt.plot(x_trend, y_trend, 'g--', linewidth=2, alpha=0.6, label=f'Best fit: y={m:.0f}x+{b:.0f}')
+                    
+                    # Add equation text box
+                    equation_text = f'y = {m:.2f}x + {b:.2f}\nR² = {r_squared:.6f}'
+                    plt.text(0.05, 0.95, equation_text, transform=plt.gca().transAxes, 
+                            fontsize=10, verticalalignment='top',
+                            bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
+                
+                plt.xlabel('Dose', fontsize=12)
+                plt.ylabel('Total Photons', fontsize=12)
+                plt.title(f'Total Photons vs Dose - Block {block_num + 1}', fontsize=14, fontweight='bold')
+                plt.grid(True, alpha=0.3)
+                plt.legend(loc='lower right')
+                plt.ticklabel_format(axis='y', style='sci', scilimits=(0,0))
+                plt.gca().set_facecolor("#7ac5cf8e")
+                plt.gcf().set_facecolor('lightgray')
+                plt.show()
+            
+            # Ask if user wants to see more blocks
+            continue_choice = input("Would you like to view another block? (yes/no): ")
+            if continue_choice.lower() not in ['yes', 'y']:
+                view_more = False
+
+    if graph=='photon': #while loop for multiple window adjustments 
+        g=0
+        start=0
+        end=listlength
+        while g == 0:
+            total_photon_graph(datanum)
+            # zoom controls
+            z = 0
+            while z == 0:
+                zoom = input('Would you like to adjust window? ')
+                if zoom == 'Yes' or zoom == 'yes' or zoom == 'Y' or zoom == 'YES' or zoom == 'y':
+                    s = 0
+                    e = 0
+                    z = 1
+                elif zoom == 'NO' or zoom == 'no' or zoom == 'No' or zoom == 'N' or zoom == 'n':
+                    s = 1
+                    g = 1  # This will exit the outer while loop
+                    z = 1
+                    e = 1
+                else:
+                    print('input not understood')
+
+            while s == 0:
+                inone = input('Input start time (time value): ')
+                try:
+                    start_time_val = int(inone)
+                    if start_time_val in time:
+                        start = time.index(start_time_val)
+                        s = 1
+                    else:
+                        print('invalid start time')
+                except:
+                    print('invalid start time')
+                    
+            while e == 0:
+                intwo = input('Input end time (time value): ')
+                try:
+                    end_time_val = int(intwo)
+                    if end_time_val in time and end_time_val >= time[start]:
+                        end = time.index(end_time_val)
+                        e = 1
+                    else:
+                        print('invalid end time')
+                except:
+                    print('invalid end time')
+
+    if graph=='dose':
+        dose(dose_list,rad)
+    
+    #print results        
+    #print('start',radtime)
+    #print('length',radlength)
+    #print('total',rad)
+    #print('max',radmax)
+
+    # make .txt file 
+    output_path = rf'C:\Users\lukes\Videos\Captures\radiation_data_{datanum}.txt'
+    with open(output_path, 'w') as f:
+        f.write(f"{'Start':^8} {'Irradiation':^13} {'Dose':^10} {'Total':^12} {'Max':^10}\n")
+        f.write(f"{'time':^8} {'time(sec)':^13} {'':^10} {'Photons':^12} {'Photons':^10}\n")
+        f.write("-" * 55 + "\n")       
+        min_len = min(len(radtime), len(radlength), len(dose_list), len(rad), len(radmax))      
+        for i in range(min_len):
+            s = radtime[i]
+            l = radlength[i]
+            d = dose_list[i] if i < len(dose_list) else 0
+            t = rad[i]
+            m = radmax[i]           
+            f.write(f"{s:>8} {l:>13} {d:>10.2f} {t:>12.2f} {m:>10.2f}\n")
+    
+
+#interface
+def run():
+    while True:
+        print("\n" + "="*60)
+        print("RADIATION DATA ANALYSIS MENU")
+        print("="*60)
+        print("1. Select Detector 1 (Data 6)")
+        print("2. Select Detector 2 (Data 11)")
+        print("0. Exit")
+        print("="*60)
+        
+        try:
+            detector_choice = int(input("Select detector (1, 2, or 0 to exit): "))
+            
+            if detector_choice == 0:
+                print("Exiting program.")
+                break
+            elif detector_choice == 1:
+                datanum = '6'
+                time_start = 0
+                time_end = 5000
+                detector = 1
+            elif detector_choice == 2:
+                datanum = '11'
+                time_start = 940
+                time_end = 3650
+                detector = 2
+            else:
+                print("Invalid choice. Please select 1, 2, or 0.")
+                continue
+            
+            # Once detector is selected, ask what graph to view
+            while True:
+                print("\n" + "-"*40)
+                print(f"Detector {detector_choice} Selected (Data {datanum})")
+                print("-"*40)
+                print("1. Photon vs Time Graph")
+                print("2. Dose vs Photons Graph")
+                print("0. Back to Detector Selection")
+                print("-"*40)
+                
+                try:
+                    graph_choice = int(input("Select graph type (1, 2, or 0): "))
+                    
+                    if graph_choice == 0:
+                        break  # Go back to detector selection
+                    elif graph_choice == 1:
+                        graph_type = 'photon'
+                        # Run main for photon graph
+                        main(detector, 3000, 0.25, 2, datanum, time_start, time_end, graph_type)
+                    elif graph_choice == 2:
+                        graph_type = 'dose'
+                        # Run main for dose graph
+                        main(detector, 3000, 0.25, 2, datanum, time_start, time_end, graph_type)
+                    else:
+                        print("Invalid choice. Please select 1, 2, or 0.")
+                except ValueError:
+                    print("Invalid input. Please enter a number.")
+                    
+        except ValueError:
+            print("Invalid input. Please enter a number.")
+
+run()
