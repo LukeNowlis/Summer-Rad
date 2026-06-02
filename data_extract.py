@@ -338,6 +338,228 @@ def main(detector,radstart, end_percent,end_steps,datanum,time_start,time_end,gr
             if continue_choice.lower() not in ['yes', 'y']:
                 view_more = False
 
+    def analyze_block_variance(dose_list, rad, radtime, radlength, photon, time, detector):
+        # Define blocks
+        if detector == 1:
+            blocks = [
+                (0, 14),      # Block 1
+                (14, 29),     # Block 2
+                (29, 44),     # Block 3 
+                (44, 62),     # Block 4
+                (62, 81),     # Block 5  
+            ]
+        if detector == 2:
+            blocks = [
+                (0, 21),      # Block 1
+                (21, 36),     # Block 2
+                (36, 51),     # Block 3 
+                (51, 69),     # Block 4
+                (69, 85),     # Block 5  
+            ]
+        
+        while True:
+            print("\n" + "="*60)
+            print("VARIANCE ANALYSIS MENU")
+            print("="*60)
+            print(f"Available blocks: 1 to {len(blocks)}")
+            print("0. Return to main menu")
+            print("="*60)
+            
+            try:
+                block_choice = int(input(f"Which block would you like to analyze? (1-{len(blocks)} or 0): "))
+                
+                if block_choice == 0:
+                    print("Returning to main menu...")
+                    break
+                
+                if block_choice < 1 or block_choice > len(blocks):
+                    print("Invalid choice. Please try again.")
+                    continue
+                
+                start, end = blocks[block_choice - 1]
+                block_doses = dose_list[start:end]
+                block_rad = rad[start:end]
+                
+                # Group rad values by dose within this block
+                dose_groups = {}
+                for i, dose in enumerate(block_doses):
+                    if dose not in dose_groups:
+                        dose_groups[dose] = []
+                    dose_groups[dose].append((block_rad[i], start + i))
+                
+                # Calculate and display statistics for each dose
+                print("\n" + "="*60)
+                print(f"BLOCK {block_choice} VARIANCE ANALYSIS")
+                print("="*60)
+                
+                for dose in sorted(dose_groups.keys()):
+                    values = [v[0] for v in dose_groups[dose]]
+                    n = len(values)
+                    
+                    if n < 2:
+                        print(f"\nDose = {dose}: Only {n} event (need 2+ for variance)")
+                        continue
+                    
+                    # Total photon statistics
+                    mean_val = sum(values) / n
+                    std_val = (sum((x - mean_val) ** 2 for x in values) / (n - 1)) ** 0.5
+                    
+                    # Calculate point-by-point variance for this dose
+                    original_indices = [idx for _, idx in dose_groups[dose]]
+                    
+                    # Align events to calculate shape variance
+                    max_duration = max(radlength[idx] for idx in original_indices)
+                    aligned_events = []
+                    
+                    for idx in original_indices:
+                        start_time = radtime[idx]
+                        start_idx = time.index(start_time)
+                        end_idx = start_idx + radlength[idx]
+                        
+                        event_photon = photon[start_idx:end_idx+1]
+                        
+                        # Pad to max_duration with zeros
+                        padded = list(event_photon) + [0] * (max_duration + 1 - len(event_photon))
+                        aligned_events.append(padded)
+                    
+                    # Calculate point-by-point variance
+                    aligned_array = np.array(aligned_events)
+                    var_curve = np.var(aligned_array, axis=0)
+                    avg_point_variance = np.mean(var_curve)
+                    avg_point_std = avg_point_variance ** 0.5
+                    
+                    # Calculate average mean value for relative variance
+                    mean_curve = np.mean(aligned_array, axis=0)
+                    avg_mean = np.mean(mean_curve)
+                    relative_variation = (avg_point_std / avg_mean) * 100 if avg_mean > 0 else 0
+                    
+                    print(f"\nDose = {dose} ({n} events)")
+                    print(f"  Total Photon Values: {[round(v, 2) for v in values]}")
+                    print(f"  Mean Total: {mean_val:.2f}")
+                    print(f"  Std Dev Total: {std_val:.2f}")
+                    print(f"  Avg Point-by-Point Variance: {avg_point_variance:.2f}")
+                    print(f"  Avg Point-by-Point Std Dev: {avg_point_std:.2f}")
+                    print(f"  Relative Variation: {relative_variation:.2f}%")
+                
+                # Ask if user wants to graph a specific dose from this block
+                while True:
+                    print("\n" + "="*60)
+                    print("GRAPHING MENU")
+                    print("="*60)
+                    
+                    # Show available doses with multiple events
+                    available_doses = [d for d in dose_groups.keys() if len(dose_groups[d]) >= 2]
+                    
+                    if not available_doses:
+                        print("No doses with multiple events in this block to graph.")
+                        break
+                    
+                    print("Available doses to graph:")
+                    for i, dose in enumerate(available_doses):
+                        print(f"  {i+1}. Dose = {dose} ({len(dose_groups[dose])} events)")
+                    print("  0. Back to block selection")
+                    print("="*60)
+                    
+                    try:
+                        dose_choice = int(input("Select a dose to graph (or 0 to go back): "))
+                        
+                        if dose_choice == 0:
+                            break
+                        
+                        if dose_choice < 1 or dose_choice > len(available_doses):
+                            print("Invalid choice. Please try again.")
+                            continue
+                        
+                        selected_dose = available_doses[dose_choice - 1]
+                        
+                        # Find indices of this dose in the block
+                        block_indices = [i for i in range(len(block_doses)) if block_doses[i] == selected_dose]
+                        original_indices = [start + i for i in block_indices]
+                        
+                        # Align events for graphing
+                        max_duration = max(radlength[idx] for idx in original_indices)
+                        aligned_events = []
+                        all_relative_times = []
+                        
+                        for idx in original_indices:
+                            start_time = radtime[idx]
+                            start_idx = time.index(start_time)
+                            end_idx = start_idx + radlength[idx]
+                            
+                            event_time = time[start_idx:end_idx+1]
+                            event_photon = photon[start_idx:end_idx+1]
+                            relative_time = [t - start_time for t in event_time]
+                            all_relative_times.append(relative_time)
+                            
+                            padded_photons = list(event_photon) + [0] * (max_duration + 1 - len(event_photon))
+                            aligned_events.append(padded_photons)
+                        
+                        # Calculate mean and std for the deviation band
+                        aligned_array = np.array(aligned_events)
+                        mean_curve = np.mean(aligned_array, axis=0)
+                        std_curve = np.std(aligned_array, axis=0)
+                        time_axis = np.arange(max_duration + 1)
+                        
+                        # Calculate point-by-point variance for display
+                        var_curve = np.var(aligned_array, axis=0)
+                        avg_point_variance = np.mean(var_curve)
+                        avg_point_std = avg_point_variance ** 0.5
+                        
+                        # Create the plot
+                        plt.figure(figsize=(14, 8))
+                        
+                        # Plot individual events (gray, transparent)
+                        colors = ['red', 'green', 'purple', 'brown', 'pink','orange', 'blue']
+                        for plot_idx, idx in enumerate(original_indices):
+                            start_time = radtime[idx]
+                            start_idx = time.index(start_time)
+                            end_idx = start_idx + radlength[idx]
+                            
+                            event_time = time[start_idx:end_idx+1]
+                            event_photon = photon[start_idx:end_idx+1]
+                            relative_time = [t - start_time for t in event_time]
+                            
+                            plt.plot(relative_time, event_photon, 
+                                    marker='o', linestyle='-', linewidth=1.5, markersize=4,
+                                    color=colors[plot_idx], alpha=0.5,
+                                    label=f'Event {plot_idx+1}')
+                        
+                        # Plot mean curve (thick blue line)
+                        plt.plot(time_axis, mean_curve, 'y--', linewidth=3, alpha=0.7, label='Mean Curve')
+                        
+                        # Plot standard deviation band (shaded area)
+                        plt.fill_between(time_axis, 
+                                        mean_curve - std_curve, 
+                                        mean_curve + std_curve, 
+                                        color='yellow', alpha=0.2, label='±1 Std Dev')
+                        
+                        # Add a second band for 2 standard deviations (optional)
+                        plt.fill_between(time_axis, 
+                                        mean_curve - 2*std_curve, 
+                                        mean_curve + 2*std_curve, 
+                                        color='yellow', alpha=0.1, label='±2 Std Dev')
+                        
+                        plt.xlabel('Time from Event Start (seconds)', fontsize=12)
+                        plt.ylabel('Photon Intensity', fontsize=12)
+                        plt.title(f'Dose = {selected_dose} Events from Block {block_choice}\n' +
+                                f'Avg Point-by-Point Std Dev = {avg_point_std:.2f}  |  Relative Variation = {(avg_point_std/np.mean(mean_curve))*100:.2f}%', 
+                                fontsize=12, fontweight='bold')
+                        plt.grid(True, alpha=0.3)
+                        plt.legend(loc='best', fontsize=9)
+                        plt.ticklabel_format(axis='y', style='sci', scilimits=(0,0))
+                        plt.gca().set_facecolor("#7ac5cf8e")
+                        plt.gcf().set_facecolor('lightgray')
+                        plt.show()
+                        
+                    except ValueError:
+                        print("Invalid input. Please enter a number.")
+                            
+            except ValueError:
+                print("Invalid input. Please enter a number.")
+
+    if graph == 'variance':
+        analyze_block_variance(dose_list, rad, radtime, radlength, photon, time, detector)
+
     if graph=='photon': #while loop for multiple window adjustments 
         g=0
         start=0
@@ -407,9 +629,7 @@ def main(detector,radstart, end_percent,end_steps,datanum,time_start,time_end,gr
             t = rad[i]
             m = radmax[i]           
             f.write(f"{s:>8} {l:>13} {d:>10.2f} {t:>12.2f} {m:>10.2f}\n")
-    
 
-#interface
 def run():
     while True:
         print("\n" + "="*60)
@@ -447,28 +667,29 @@ def run():
                 print("-"*40)
                 print("1. Photon vs Time Graph")
                 print("2. Dose vs Photons Graph")
+                print("3. Variance Analysis by Block")
                 print("0. Back to Detector Selection")
                 print("-"*40)
                 
                 try:
-                    graph_choice = int(input("Select graph type (1, 2, or 0): "))
+                    graph_choice = int(input("Select graph type (1-3, or 0): "))
                     
                     if graph_choice == 0:
                         break  # Go back to detector selection
                     elif graph_choice == 1:
                         graph_type = 'photon'
-                        # Run main for photon graph
                         main(detector, 3000, 0.25, 2, datanum, time_start, time_end, graph_type)
                     elif graph_choice == 2:
                         graph_type = 'dose'
-                        # Run main for dose graph
+                        main(detector, 3000, 0.25, 2, datanum, time_start, time_end, graph_type)
+                    elif graph_choice == 3:
+                        graph_type = 'variance'
                         main(detector, 3000, 0.25, 2, datanum, time_start, time_end, graph_type)
                     else:
-                        print("Invalid choice. Please select 1, 2, or 0.")
+                        print("Invalid choice. Please select 0-3.")
                 except ValueError:
                     print("Invalid input. Please enter a number.")
                     
         except ValueError:
             print("Invalid input. Please enter a number.")
-
 run()
