@@ -231,27 +231,36 @@ def main(detector,radstart, end_percent,end_steps,datanum,time_start,time_end,gr
     def dose(dose_list, rad):
         # Manually define block ranges based on your data
         if detector == 1:
+            detector_name = "Detector 1 (Data 6)"
             blocks = [
-                (0, 14),      # Block 1
-                (14, 29),     # Block 2
-                (29, 44),     # Block 3 
-                (44, 62),     # Block 4
-                (62, 81),     # Block 5  
+                {'name': 'Energy: 244.1(MeV), Dose Rate: 1.7(Gy/s)', 'start': 0, 'end': 14},
+                {'name': 'Energy: 208.8(MeV), Dose Rate: 0.56(Gy/s)', 'start': 14, 'end': 29},
+                {'name': 'Energy: 162.8(MeV), Dose Rate: 0.3(Gy/s)', 'start': 29, 'end': 44},
+                {'name': 'Energy: 244.1(MeV), Dose Rate: 1.1(Gy/s)', 'start': 44, 'end': 62},
+                {'name': 'Energy: 244.1(MeV), Dose Rate: 0.44(Gy/s)', 'start': 62, 'end': 81},
             ]
         if detector == 2:
+            detector_name = "Detector 2 (Data 11)"
             blocks = [
-                (0, 21),      # Block 1
-                (21, 36),     # Block 2
-                (36, 51),     # Block 3 
-                (51, 69),     # Block 4
-                (69, 85),     # Block 5  
+                {'name': 'Energy: 244(MeV), Dose Rate: 1.7(Gy/s)', 'start': 0, 'end': 21},
+                {'name': 'Energy: 208.8(MeV), Dose Rate: 0.56(Gy/s)', 'start': 21, 'end': 36},
+                {'name': 'Energy: 162(MeV), Dose Rate: 0.3(Gy/s)', 'start': 36, 'end': 51},
+                {'name': 'Energy: 244(MeV), Dose Rate: 1.1(Gy/s)', 'start': 51, 'end': 69},
+                {'name': 'Energy: 244(MeV), Dose Rate: 0.44(Gy/s)', 'start': 69, 'end': 85},
             ]
         
         # While loop for viewing multiple blocks
         view_more = True
         while view_more:
-            print(f"Available blocks: 1 to {len(blocks)}")
-            print("Enter 0 to view all blocks")
+            print("\n" + "="*60)
+            print(f"DOSE RESPONSE GRAPH - {detector_name}")
+            print("="*60)
+            print("AVAILABLE BLOCKS")
+            print("="*60)
+            for i, block in enumerate(blocks):
+                print(f"  {i+1}. {block['name']}")
+            print("  0. View all blocks")
+            print("="*60)
             
             block_choice = -1
             while block_choice < 0 or block_choice > len(blocks):
@@ -266,7 +275,11 @@ def main(detector,radstart, end_percent,end_steps,datanum,time_start,time_end,gr
             blocks_to_plot = range(len(blocks)) if block_choice == 0 else [block_choice - 1]
             
             for block_num in blocks_to_plot:
-                start, end = blocks[block_num]
+                block = blocks[block_num]
+                start = block['start']
+                end = block['end']
+                block_name = block['name']
+                
                 block_doses = dose_list[start:end]
                 block_rad = rad[start:end]
                 
@@ -308,7 +321,7 @@ def main(detector,radstart, end_percent,end_steps,datanum,time_start,time_end,gr
                     ss_tot = np.sum((y - np.mean(y)) ** 2)
                     
                     # Avoid division by zero
-                    if ss_tot > 1e-10:  # Small threshold to avoid floating point issues
+                    if ss_tot > 1e-10:
                         r_squared = 1 - (ss_res / ss_tot)
                     else:
                         r_squared = 1.0
@@ -316,16 +329,20 @@ def main(detector,radstart, end_percent,end_steps,datanum,time_start,time_end,gr
                     # Plot with trend line
                     plt.plot(unique_doses, averaged_photons, 'k*', markersize=12, label='Data points')
                     plt.plot(x_trend, y_trend, 'g--', linewidth=2, alpha=0.6, label=f'Best fit: y={m:.0f}x+{b:.0f}')
-                    
+
                     # Add equation text box
                     equation_text = f'y = {m:.2f}x + {b:.2f}\nR² = {r_squared:.6f}'
                     plt.text(0.05, 0.95, equation_text, transform=plt.gca().transAxes, 
                             fontsize=10, verticalalignment='top',
                             bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
-                
+
                 plt.xlabel('Dose', fontsize=12)
                 plt.ylabel('Total Photons', fontsize=12)
-                plt.title(f'Total Photons vs Dose - Block {block_num + 1}', fontsize=14, fontweight='bold')
+
+                # Split title into two lines: detector on top, block name below
+                plt.suptitle(detector_name, fontsize=12, fontweight='bold', y=0.98)
+                plt.title(block_name, fontsize=14, fontweight='bold', y=1.02)
+
                 plt.grid(True, alpha=0.3)
                 plt.legend(loc='lower right')
                 plt.ticklabel_format(axis='y', style='sci', scilimits=(0,0))
@@ -334,35 +351,38 @@ def main(detector,radstart, end_percent,end_steps,datanum,time_start,time_end,gr
                 plt.show()
             
             # Ask if user wants to see more blocks
-            continue_choice = input("Would you like to view another block? (yes/no): ")
+            continue_choice = input("\nWould you like to view another block? (yes/no): ")
             if continue_choice.lower() not in ['yes', 'y']:
                 view_more = False
 
     def analyze_block_variance(dose_list, rad, radtime, radlength, photon, time, detector):
         # Define blocks
         if detector == 1:
+            detector_name = "Detector 1 (Data 6)"
             blocks = [
-                (0, 14),      # Block 1
-                (14, 29),     # Block 2
-                (29, 44),     # Block 3 
-                (44, 62),     # Block 4
-                (62, 81),     # Block 5  
+                {'name': 'Energy: 244.1(MeV), Dose Rate: 1.7(Gy/s)', 'start': 0, 'end': 14},
+                {'name': 'Energy: 208.8(MeV), Dose Rate: 0.56(Gy/s)', 'start': 14, 'end': 29},
+                {'name': 'Energy: 162.8(MeV), Dose Rate: 0.3(Gy/s)', 'start': 29, 'end': 44},
+                {'name': 'Energy: 244.1(MeV), Dose Rate: 1.1(Gy/s)', 'start': 44, 'end': 62},
+                {'name': 'Energy: 244.1(MeV), Dose Rate: 0.44(Gy/s)', 'start': 62, 'end': 81},
             ]
         if detector == 2:
+            detector_name = "Detector 2 (Data 11)"
             blocks = [
-                (0, 21),      # Block 1
-                (21, 36),     # Block 2
-                (36, 51),     # Block 3 
-                (51, 69),     # Block 4
-                (69, 85),     # Block 5  
+                {'name': 'Energy: 244(MeV), Dose Rate: 1.7(Gy/s)', 'start': 0, 'end': 21},
+                {'name': 'Energy: 208.8(MeV), Dose Rate: 0.56(Gy/s)', 'start': 21, 'end': 36},
+                {'name': 'Energy: 162(MeV), Dose Rate: 0.3(Gy/s)', 'start': 36, 'end': 51},
+                {'name': 'Energy: 244(MeV), Dose Rate: 1.1(Gy/s)', 'start': 51, 'end': 69},
+                {'name': 'Energy: 244(MeV), Dose Rate: 0.44(Gy/s)', 'start': 69, 'end': 85},
             ]
         
         while True:
             print("\n" + "="*60)
-            print("VARIANCE ANALYSIS MENU")
+            print(f"VARIANCE ANALYSIS - {detector_name}")
             print("="*60)
-            print(f"Available blocks: 1 to {len(blocks)}")
-            print("0. Return to main menu")
+            for i, block in enumerate(blocks):
+                print(f"  {i+1}. {block['name']}")
+            print("  0. Return to main menu")
             print("="*60)
             
             try:
@@ -376,7 +396,11 @@ def main(detector,radstart, end_percent,end_steps,datanum,time_start,time_end,gr
                     print("Invalid choice. Please try again.")
                     continue
                 
-                start, end = blocks[block_choice - 1]
+                selected_block = blocks[block_choice - 1]
+                start = selected_block['start']
+                end = selected_block['end']
+                block_name = selected_block['name']
+                
                 block_doses = dose_list[start:end]
                 block_rad = rad[start:end]
                 
@@ -389,7 +413,7 @@ def main(detector,radstart, end_percent,end_steps,datanum,time_start,time_end,gr
                 
                 # Calculate and display statistics for each dose
                 print("\n" + "="*60)
-                print(f"BLOCK {block_choice} VARIANCE ANALYSIS")
+                print(f"{detector_name} - {block_name}")
                 print("="*60)
                 
                 for dose in sorted(dose_groups.keys()):
@@ -479,18 +503,13 @@ def main(detector,radstart, end_percent,end_steps,datanum,time_start,time_end,gr
                         # Align events for graphing
                         max_duration = max(radlength[idx] for idx in original_indices)
                         aligned_events = []
-                        all_relative_times = []
                         
                         for idx in original_indices:
                             start_time = radtime[idx]
                             start_idx = time.index(start_time)
                             end_idx = start_idx + radlength[idx]
                             
-                            event_time = time[start_idx:end_idx+1]
                             event_photon = photon[start_idx:end_idx+1]
-                            relative_time = [t - start_time for t in event_time]
-                            all_relative_times.append(relative_time)
-                            
                             padded_photons = list(event_photon) + [0] * (max_duration + 1 - len(event_photon))
                             aligned_events.append(padded_photons)
                         
@@ -508,8 +527,8 @@ def main(detector,radstart, end_percent,end_steps,datanum,time_start,time_end,gr
                         # Create the plot
                         plt.figure(figsize=(14, 8))
                         
-                        # Plot individual events (gray, transparent)
-                        colors = ['red', 'green', 'purple', 'brown', 'pink','orange', 'blue']
+                        # Plot individual events
+                        colors = ['red', 'green', 'purple', 'brown', 'pink', 'orange', 'blue']
                         for plot_idx, idx in enumerate(original_indices):
                             start_time = radtime[idx]
                             start_idx = time.index(start_time)
@@ -521,19 +540,19 @@ def main(detector,radstart, end_percent,end_steps,datanum,time_start,time_end,gr
                             
                             plt.plot(relative_time, event_photon, 
                                     marker='o', linestyle='-', linewidth=1.5, markersize=4,
-                                    color=colors[plot_idx], alpha=0.5,
+                                    color=colors[plot_idx % len(colors)], alpha=0.5,
                                     label=f'Event {plot_idx+1}')
                         
-                        # Plot mean curve (thick blue line)
+                        # Plot mean curve
                         plt.plot(time_axis, mean_curve, 'y--', linewidth=3, alpha=0.7, label='Mean Curve')
                         
-                        # Plot standard deviation band (shaded area)
+                        # Plot standard deviation band
                         plt.fill_between(time_axis, 
                                         mean_curve - std_curve, 
                                         mean_curve + std_curve, 
                                         color='yellow', alpha=0.2, label='±1 Std Dev')
                         
-                        # Add a second band for 2 standard deviations (optional)
+                        # Add second band for 2 standard deviations
                         plt.fill_between(time_axis, 
                                         mean_curve - 2*std_curve, 
                                         mean_curve + 2*std_curve, 
@@ -541,8 +560,9 @@ def main(detector,radstart, end_percent,end_steps,datanum,time_start,time_end,gr
                         
                         plt.xlabel('Time from Event Start (seconds)', fontsize=12)
                         plt.ylabel('Photon Intensity', fontsize=12)
-                        plt.title(f'Dose = {selected_dose} Events from Block {block_choice}\n' +
-                                f'Avg Point-by-Point Std Dev = {avg_point_std:.2f}  |  Relative Variation = {(avg_point_std/np.mean(mean_curve))*100:.2f}%', 
+                        plt.title(f'{detector_name} - {block_name}\nDose = {selected_dose} | ' +
+                                f'Avg Std Dev = {avg_point_std:.2f} | ' +
+                                f'Relative Variation = {(avg_point_std/np.mean(mean_curve))*100:.2f}%', 
                                 fontsize=12, fontweight='bold')
                         plt.grid(True, alpha=0.3)
                         plt.legend(loc='best', fontsize=9)
@@ -609,12 +629,6 @@ def main(detector,radstart, end_percent,end_steps,datanum,time_start,time_end,gr
     if graph=='dose':
         dose(dose_list,rad)
     
-    #print results        
-    #print('start',radtime)
-    #print('length',radlength)
-    #print('total',rad)
-    #print('max',radmax)
-
     # make .txt file 
     output_path = rf'C:\Users\lukes\Videos\Captures\radiation_data_{datanum}.txt'
     with open(output_path, 'w') as f:
