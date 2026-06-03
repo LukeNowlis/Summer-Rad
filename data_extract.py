@@ -121,6 +121,13 @@ def main(detector,radstart, end_percent,end_steps,datanum,time_start,time_end,gr
                 value = cell.value       
                 if isinstance(value, (int, float)):
                     dose_list.append(value)
+        if detector == 3:
+            sheet = book['Det3']
+            for i in range(7, 100):
+                cell = sheet[f'C{i}']
+                value = cell.value       
+                if isinstance(value, (int, float)):
+                    dose_list.append(value)
         return dose_list
     dose_list = exel(detector)
 
@@ -248,7 +255,16 @@ def main(detector,radstart, end_percent,end_steps,datanum,time_start,time_end,gr
                 {'name': 'Energy: 244(MeV), Dose Rate: 1.1(Gy/s)', 'start': 51, 'end': 69},
                 {'name': 'Energy: 244(MeV), Dose Rate: 0.44(Gy/s)', 'start': 69, 'end': 85},
             ]
-        
+        if detector == 3:
+            detector_name = "Detector 3 (Data 12)"
+            blocks = [
+                {'name': 'Energy: 244(MeV), Dose Rate: 1.7(Gy/s)', 'start': 0, 'end': 21},
+                {'name': 'Energy: 208.8(MeV), Dose Rate: 0.56(Gy/s)', 'start': 21, 'end': 36},
+                {'name': 'Energy: 162(MeV), Dose Rate: 0.3(Gy/s)', 'start': 36, 'end': 52},
+                {'name': 'Energy: 244(MeV), Dose Rate: 1.1(Gy/s)', 'start': 52, 'end': 70},
+                {'name': 'Energy: 244(MeV), Dose Rate: 0.44(Gy/s)', 'start': 70, 'end': 85},
+            ]
+
         # While loop for viewing multiple blocks
         view_more = True
         while view_more:
@@ -375,7 +391,16 @@ def main(detector,radstart, end_percent,end_steps,datanum,time_start,time_end,gr
                 {'name': 'Energy: 244(MeV), Dose Rate: 1.1(Gy/s)', 'start': 51, 'end': 69},
                 {'name': 'Energy: 244(MeV), Dose Rate: 0.44(Gy/s)', 'start': 69, 'end': 85},
             ]
-        
+        if detector == 3:
+            detector_name = "Detector 3 (Data 12)"
+            blocks = [
+                {'name': 'Energy: 244(MeV), Dose Rate: 1.7(Gy/s)', 'start': 0, 'end': 21},
+                {'name': 'Energy: 208.8(MeV), Dose Rate: 0.56(Gy/s)', 'start': 21, 'end': 36},
+                {'name': 'Energy: 162(MeV), Dose Rate: 0.3(Gy/s)', 'start': 36, 'end': 52},
+                {'name': 'Energy: 244(MeV), Dose Rate: 1.1(Gy/s)', 'start': 52, 'end': 70},
+                {'name': 'Energy: 244(MeV), Dose Rate: 0.44(Gy/s)', 'start': 70, 'end': 85},
+            ]
+
         while True:
             print("\n" + "="*60)
             print(f"VARIANCE ANALYSIS - {detector_name}")
@@ -409,7 +434,7 @@ def main(detector,radstart, end_percent,end_steps,datanum,time_start,time_end,gr
                 for i, dose in enumerate(block_doses):
                     if dose not in dose_groups:
                         dose_groups[dose] = []
-                    dose_groups[dose].append((block_rad[i], start + i))
+                    dose_groups[dose].append(block_rad[i])
                 
                 # Calculate and display statistics for each dose
                 print("\n" + "="*60)
@@ -417,53 +442,23 @@ def main(detector,radstart, end_percent,end_steps,datanum,time_start,time_end,gr
                 print("="*60)
                 
                 for dose in sorted(dose_groups.keys()):
-                    values = [v[0] for v in dose_groups[dose]]
+                    values = dose_groups[dose]
                     n = len(values)
                     
                     if n < 2:
                         print(f"\nDose = {dose}: Only {n} event (need 2+ for variance)")
                         continue
                     
-                    # Total photon statistics
+                    # Calculate statistics
                     mean_val = sum(values) / n
                     std_val = (sum((x - mean_val) ** 2 for x in values) / (n - 1)) ** 0.5
-                    
-                    # Calculate point-by-point variance for this dose
-                    original_indices = [idx for _, idx in dose_groups[dose]]
-                    
-                    # Align events to calculate shape variance
-                    max_duration = max(radlength[idx] for idx in original_indices)
-                    aligned_events = []
-                    
-                    for idx in original_indices:
-                        start_time = radtime[idx]
-                        start_idx = time.index(start_time)
-                        end_idx = start_idx + radlength[idx]
-                        
-                        event_photon = photon[start_idx:end_idx+1]
-                        
-                        # Pad to max_duration with zeros
-                        padded = list(event_photon) + [0] * (max_duration + 1 - len(event_photon))
-                        aligned_events.append(padded)
-                    
-                    # Calculate point-by-point variance
-                    aligned_array = np.array(aligned_events)
-                    var_curve = np.var(aligned_array, axis=0)
-                    avg_point_variance = np.mean(var_curve)
-                    avg_point_std = avg_point_variance ** 0.5
-                    
-                    # Calculate average mean value for relative variance
-                    mean_curve = np.mean(aligned_array, axis=0)
-                    avg_mean = np.mean(mean_curve)
-                    relative_variation = (avg_point_std / avg_mean) * 100 if avg_mean > 0 else 0
+                    percent_diff = (std_val / mean_val) * 100
                     
                     print(f"\nDose = {dose} ({n} events)")
                     print(f"  Total Photon Values: {[round(v, 2) for v in values]}")
-                    print(f"  Mean Total: {mean_val:.2f}")
-                    print(f"  Std Dev Total: {std_val:.2f}")
-                    print(f"  Avg Point-by-Point Variance: {avg_point_variance:.2f}")
-                    print(f"  Avg Point-by-Point Std Dev: {avg_point_std:.2f}")
-                    print(f"  Relative Variation: {relative_variation:.2f}%")
+                    print(f"  Average Total Photons: {mean_val:.2f}")
+                    print(f"  Standard Deviation: {std_val:.2f}")
+                    print(f"  Percent Difference from Average: {percent_diff:.2f}%")
                 
                 # Ask if user wants to graph a specific dose from this block
                 while True:
@@ -519,10 +514,11 @@ def main(detector,radstart, end_percent,end_steps,datanum,time_start,time_end,gr
                         std_curve = np.std(aligned_array, axis=0)
                         time_axis = np.arange(max_duration + 1)
                         
-                        # Calculate point-by-point variance for display
-                        var_curve = np.var(aligned_array, axis=0)
-                        avg_point_variance = np.mean(var_curve)
-                        avg_point_std = avg_point_variance ** 0.5
+                        # Get statistics for this dose
+                        dose_values = dose_groups[selected_dose]
+                        dose_mean = sum(dose_values) / len(dose_values)
+                        dose_std = (sum((x - dose_mean) ** 2 for x in dose_values) / (len(dose_values) - 1)) ** 0.5
+                        dose_percent = (dose_std / dose_mean) * 100
                         
                         # Create the plot
                         plt.figure(figsize=(14, 8))
@@ -561,8 +557,8 @@ def main(detector,radstart, end_percent,end_steps,datanum,time_start,time_end,gr
                         plt.xlabel('Time from Event Start (seconds)', fontsize=12)
                         plt.ylabel('Photon Intensity', fontsize=12)
                         plt.title(f'{detector_name} - {block_name}\nDose = {selected_dose} | ' +
-                                f'Avg Std Dev = {avg_point_std:.2f} | ' +
-                                f'Relative Variation = {(avg_point_std/np.mean(mean_curve))*100:.2f}%', 
+                                f'Avg = {dose_mean:.0f} | Std Dev = {dose_std:.0f} | ' +
+                                f'Variation = {dose_percent:.1f}%', 
                                 fontsize=12, fontweight='bold')
                         plt.grid(True, alpha=0.3)
                         plt.legend(loc='best', fontsize=9)
@@ -573,7 +569,7 @@ def main(detector,radstart, end_percent,end_steps,datanum,time_start,time_end,gr
                         
                     except ValueError:
                         print("Invalid input. Please enter a number.")
-                            
+                                
             except ValueError:
                 print("Invalid input. Please enter a number.")
 
@@ -655,7 +651,7 @@ def run():
         print("="*60)
         
         try:
-            detector_choice = int(input("Select detector (1, 2, or 0 to exit): "))
+            detector_choice = int(input("Select detector (1, 2, 3, or 0 to exit): "))
             
             if detector_choice == 0:
                 print("Exiting program.")
@@ -670,10 +666,15 @@ def run():
                 time_start = 940
                 time_end = 3650
                 detector = 2
+            elif detector_choice ==3:
+                datanum='12'
+                time_start=4560
+                time_end=6570
+                detector=3
             else:
-                print("Invalid choice. Please select 1, 2, or 0.")
+                print("Invalid choice. Please select 1, 2, 3, or 0.")
                 continue
-            
+
             # Once detector is selected, ask what graph to view
             while True:
                 print("\n" + "-"*40)
@@ -692,13 +693,13 @@ def run():
                         break  # Go back to detector selection
                     elif graph_choice == 1:
                         graph_type = 'photon'
-                        main(detector, 3000, 0.25, 2, datanum, time_start, time_end, graph_type)
+                        main(detector, 760, 0.40, 2, datanum, time_start, time_end, graph_type)
                     elif graph_choice == 2:
                         graph_type = 'dose'
-                        main(detector, 3000, 0.25, 2, datanum, time_start, time_end, graph_type)
+                        main(detector, 760, 0.40, 2, datanum, time_start, time_end, graph_type)
                     elif graph_choice == 3:
                         graph_type = 'variance'
-                        main(detector, 3000, 0.25, 2, datanum, time_start, time_end, graph_type)
+                        main(detector, 760, 0.40, 2, datanum, time_start, time_end, graph_type)
                     else:
                         print("Invalid choice. Please select 0-3.")
                 except ValueError:
