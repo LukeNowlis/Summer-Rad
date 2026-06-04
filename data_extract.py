@@ -27,21 +27,14 @@ def main(detector,radstart, end_percent,end_steps,datanum,time_start,time_end,gr
                 time.append(int(parts[0]))
                 photon.append(int(parts[1]))
 
-#check for average background level before first radiation 
-    int_photon = []
-    inital=0
-    loop=0
-    while inital==0:
-        if photon[loop+1] - photon[loop] < radstart:#checks for rad spike 
-           int_photon.append(photon[loop]) 
-           loop+=1
-        else:
-            inital=1
-    average = round(sum(int_photon) / len(int_photon),2)
-    print(f'Using average noise level: {average}')
-    photon_adj = [r - average if r > average else 0 for r in photon]
+    #check for average background level before first radiation 
+    photon_adjusted = [0] * len(photon)  
+    noise = min(photon)
+    print(f'Using noise level: {noise}')
+    for idx in range(len(photon)):
+        photon_adjusted[idx]=max(0, photon[idx] - noise)
     #adjust photon values 
-    photon=photon_adj
+    photon=photon_adjusted
 
     #round photon list 
     photon = [round(x, 2) for x in photon]
@@ -54,7 +47,7 @@ def main(detector,radstart, end_percent,end_steps,datanum,time_start,time_end,gr
     radmax=[]
     skiplist=[(listlength-1)]
     radmax_index = []
-          
+        
     # scan through data
     def data_scan():
         for i in range(listlength - 1):
@@ -63,33 +56,50 @@ def main(detector,radstart, end_percent,end_steps,datanum,time_start,time_end,gr
             
             # search for rad spikes 
             if photon[i+1] - photon[i] > radstart:
-                radlist = [photon[i]]
+                event_noise=photon[i-1] if i > 0 else photon[i]
+
+                # Look ahead up to 3 points to find the max
+                max_window = 3
+                window_values = []               
+                # Collect up to the next 3 points (including the spike start)
+                for step in range(max_window):
+                    idx = i + step
+                    if idx < listlength:
+                        window_values.append(photon[idx])                
+                # Calculate the max of the window
+                window_max = max(window_values) if window_values else photon[i]
+
+                radlist = [photon[i]-event_noise]
                 radlist_index = [i]
                 length = 1
                 radtime.append(time[i])
                 j = i
+                photon_adjusted[i] = max(0, photon[i] - event_noise)
                 
                 # check for length of rad and max rad point - continue while photon is above 25% of start
                 while j + 1 < listlength:
                     j += 1
-                    if photon[j] > photon[i+1] * end_percent:
+                    if photon[j] > window_max * end_percent or (j + 1 < listlength and photon[j+1] > photon[j]): 
+                        photon_adjusted[j] = max(0, photon[j] - event_noise)
                         length += 1
-                        radlist.append(photon[j])
+                        radlist.append(max(0,photon[j]-event_noise))
                         radlist_index.append(j)
                     else:
                         # Add the point where condition failed
                         length += 1
-                        radlist.append(photon[j])
+                        radlist.append(max(0,photon[j]-event_noise))
                         radlist_index.append(j)
                         
                         # Add extra points after the failure
                         for k in range(1, end_steps + 1):
                             if j + k < listlength:
+                                #print(f"    k={k}, j+k={j+k}, photon[j+k]={photon[j+k]}, noise={event_noise}, result={photon[j+k] - event_noise}")
+                                photon_adjusted[j + k] = max(0, photon[j + k] - event_noise)
                                 length += 1
-                                radlist.append(photon[j + k])
+                                radlist.append(max(0,photon[j+k]-event_noise))
                                 radlist_index.append(j + k)
                         break  # Break out of the while loop AFTER adding extra points
-                
+               
                 # Only process if we have at least the starting point
                 if len(radlist) > 0:
                     time_values = [time[idx] for idx in radlist_index]
@@ -103,6 +113,11 @@ def main(detector,radstart, end_percent,end_steps,datanum,time_start,time_end,gr
                     for k in range(length):
                         skiplist.append(i + k) #skip the points in the rad event when scanning
     data_scan()
+    for idx in range(len(photon_adjusted)):
+        if idx not in skiplist:
+            photon_adjusted[idx] = photon[idx]*0.1
+    photon=photon_adjusted
+
 
     def exel(detector):
         dose_list = []
@@ -693,13 +708,22 @@ def run():
                         break  # Go back to detector selection
                     elif graph_choice == 1:
                         graph_type = 'photon'
-                        main(detector, 760, 0.40, 2, datanum, time_start, time_end, graph_type)
+                        if detector==3:
+                            main(detector, 760, 0.4, 2, datanum, time_start, time_end, graph_type)
+                        else:
+                            main(detector, 1000, 0.25, 2, datanum, time_start, time_end, graph_type)
                     elif graph_choice == 2:
                         graph_type = 'dose'
-                        main(detector, 760, 0.40, 2, datanum, time_start, time_end, graph_type)
+                        if detector==3:
+                            main(detector, 760, 0.40, 2, datanum, time_start, time_end, graph_type)
+                        else:
+                            main(detector, 3000, 0.25, 2, datanum, time_start, time_end, graph_type)
                     elif graph_choice == 3:
                         graph_type = 'variance'
-                        main(detector, 760, 0.40, 2, datanum, time_start, time_end, graph_type)
+                        if detector==3:
+                            main(detector, 760, 0.40, 2, datanum, time_start, time_end, graph_type)
+                        else:
+                            main(detector, 3000, 0.25, 2, datanum, time_start, time_end, graph_type)
                     else:
                         print("Invalid choice. Please select 0-3.")
                 except ValueError:
