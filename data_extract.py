@@ -3,7 +3,7 @@ import numpy as np
 import openpyxl
 from openpyxl import Workbook, load_workbook
 
-def main(detector,radstart, end_percent,end_steps,datanum,time_start,time_end,graph):
+def main(detector,radstart, end_percent,end_steps,datanum,time_start,time_end,graph,return_data):
     file = open(rf'C:\Users\lukes\Videos\Captures\data{datanum}-10-01-24.txt', 'r')
     time=[]
     photon=[]
@@ -30,7 +30,8 @@ def main(detector,radstart, end_percent,end_steps,datanum,time_start,time_end,gr
     #check for average background level before first radiation 
     photon_adjusted = [0] * len(photon)  
     noise = min(photon)
-    print(f'Using noise level: {noise}')
+    if not return_data:
+        print(f'Using noise level: {noise}')
     for idx in range(len(photon)):
         photon_adjusted[idx]=max(0, photon[idx] - noise)
     #adjust photon values 
@@ -47,6 +48,7 @@ def main(detector,radstart, end_percent,end_steps,datanum,time_start,time_end,gr
     radmax=[]
     skiplist=[(listlength-1)]
     radmax_index = []
+    rate_list=[]
         
     # scan through data
     def data_scan():
@@ -126,23 +128,36 @@ def main(detector,radstart, end_percent,end_steps,datanum,time_start,time_end,gr
             sheet = book['Det1']
             for i in range(15, 103):
                 cell = sheet[f'C{i}']
-                value = cell.value       
+                rcell=sheet[f'B{i}']
+                value = cell.value
+                rate=rcell.value      
                 if isinstance(value, (int, float)):
                     dose_list.append(value)
+                if isinstance(rate, (int, float)):
+                    rate_list.append(rate)
+    
         if detector == 2:
             sheet = book['Det2']
             for i in range(7, 100):
                 cell = sheet[f'C{i}']
-                value = cell.value       
+                rcell=sheet[f'B{i}']
+                value = cell.value
+                rate=rcell.value                       
                 if isinstance(value, (int, float)):
                     dose_list.append(value)
+                if isinstance(rate, (int, float)):
+                    rate_list.append(rate)                    
         if detector == 3:
             sheet = book['Det3']
             for i in range(7, 100):
                 cell = sheet[f'C{i}']
-                value = cell.value       
+                rcell=sheet[f'B{i}']
+                value = cell.value
+                rate=rcell.value                       
                 if isinstance(value, (int, float)):
                     dose_list.append(value)
+                if isinstance(rate, (int, float)):
+                    rate_list.append(rate)                    
         return dose_list
     dose_list = exel(detector)
 
@@ -386,7 +401,7 @@ def main(detector,radstart, end_percent,end_steps,datanum,time_start,time_end,gr
             if continue_choice.lower() not in ['yes', 'y']:
                 view_more = False
 
-    def analyze_block_variance(dose_list, rad, radtime, radlength, photon, time, detector):
+    def analyze_block_variance(dose_list, rad, radtime, radlength, photon, time, detector, rate_list):
         # Define blocks
         if detector == 1:
             detector_name = "Detector 1 (Data 6)"
@@ -443,13 +458,22 @@ def main(detector,radstart, end_percent,end_steps,datanum,time_start,time_end,gr
                 
                 block_doses = dose_list[start:end]
                 block_rad = rad[start:end]
+                block_rates = rate_list[start:end]
                 
-                # Group rad values by dose within this block
+                # Group values by dose
                 dose_groups = {}
+                rate_groups = {}
                 for i, dose in enumerate(block_doses):
                     if dose not in dose_groups:
                         dose_groups[dose] = []
+                        rate_groups[dose] = []
                     dose_groups[dose].append(block_rad[i])
+                    rate_groups[dose].append(block_rates[i])
+                
+                # Store for dose rate vs variation graph
+                avg_rates = []
+                percent_variations = []
+                unique_doses_list = []
                 
                 # Calculate and display statistics for each dose
                 print("\n" + "="*60)
@@ -459,6 +483,7 @@ def main(detector,radstart, end_percent,end_steps,datanum,time_start,time_end,gr
                 for dose in sorted(dose_groups.keys()):
                     values = dose_groups[dose]
                     n = len(values)
+                    rate_values = rate_groups[dose]
                     
                     if n < 2:
                         print(f"\nDose = {dose}: Only {n} event (need 2+ for variance)")
@@ -469,13 +494,25 @@ def main(detector,radstart, end_percent,end_steps,datanum,time_start,time_end,gr
                     std_val = (sum((x - mean_val) ** 2 for x in values) / (n - 1)) ** 0.5
                     percent_diff = (std_val / mean_val) * 100
                     
+                    # Calculate average rate
+                    mean_rate = sum(rate_values) / len(rate_values) if rate_values else 0
+                    std_rate = (sum((r - mean_rate) ** 2 for r in rate_values) / (len(rate_values) - 1)) ** 0.5 if len(rate_values) > 1 else 0
+                    
                     print(f"\nDose = {dose} ({n} events)")
                     print(f"  Total Photon Values: {[round(v, 2) for v in values]}")
                     print(f"  Average Total Photons: {mean_val:.2f}")
                     print(f"  Standard Deviation: {std_val:.2f}")
                     print(f"  Percent Difference from Average: {percent_diff:.2f}%")
+                    print(f"  Rate Values: {[round(r, 2) for r in rate_values]}")
+                    print(f"  Average Rate: {mean_rate:.2f}")
+                    print(f"  Rate Standard Deviation: {std_rate:.2f}")
+                    
+                    # Store for graph
+                    avg_rates.append(mean_rate)
+                    percent_variations.append(percent_diff)
+                    unique_doses_list.append(dose)
                 
-                # Ask if user wants to graph a specific dose from this block
+                # Graphing menu
                 while True:
                     print("\n" + "="*60)
                     print("GRAPHING MENU")
@@ -484,22 +521,43 @@ def main(detector,radstart, end_percent,end_steps,datanum,time_start,time_end,gr
                     # Show available doses with multiple events
                     available_doses = [d for d in dose_groups.keys() if len(dose_groups[d]) >= 2]
                     
-                    if not available_doses:
-                        print("No doses with multiple events in this block to graph.")
-                        break
+                    if available_doses:
+                        print("Available doses to graph:")
+                        for i, dose in enumerate(available_doses):
+                            print(f"  {i+1}. Dose = {dose} ({len(dose_groups[dose])} events)")
                     
-                    print("Available doses to graph:")
-                    for i, dose in enumerate(available_doses):
-                        print(f"  {i+1}. Dose = {dose} ({len(dose_groups[dose])} events)")
+                    # Add the option for dose rate vs variation
+                    if len(avg_rates) > 1:
+                        print(f"  {len(available_doses)+1}. Graph Average Dose Rate vs Percent Variation")
+                    
                     print("  0. Back to block selection")
                     print("="*60)
                     
                     try:
-                        dose_choice = int(input("Select a dose to graph (or 0 to go back): "))
+                        max_choice = len(available_doses) + 1 if len(avg_rates) > 1 else len(available_doses)
+                        dose_choice = int(input(f"Select an option (1-{max_choice} or 0): "))
                         
                         if dose_choice == 0:
                             break
                         
+                        # Check if user selected the dose rate vs variation option
+                        if len(avg_rates) > 1 and dose_choice == len(available_doses) + 1:
+                            plt.figure(figsize=(10, 6))
+                            plt.plot(avg_rates, percent_variations, 'bo-', linewidth=2, markersize=8)
+                            
+                            # Add dose labels to each point
+                            for i, dose in enumerate(unique_doses_list):
+                                plt.annotate(f'Dose {dose}', (avg_rates[i], percent_variations[i]), 
+                                            xytext=(5, 5), textcoords='offset points', fontsize=9)
+                            
+                            plt.xlabel('Average Dose Rate (Gy/s)', fontsize=12)
+                            plt.ylabel('Percent Variation (%)', fontsize=12)
+                            plt.title(f'{detector_name} - {block_name}\nDose Rate vs Photon Variation', fontsize=14, fontweight='bold')
+                            plt.grid(True, alpha=0.3)
+                            plt.show()
+                            continue
+                        
+                        # Handle specific dose graphing
                         if dose_choice < 1 or dose_choice > len(available_doses):
                             print("Invalid choice. Please try again.")
                             continue
@@ -584,76 +642,237 @@ def main(detector,radstart, end_percent,end_steps,datanum,time_start,time_end,gr
                         
                     except ValueError:
                         print("Invalid input. Please enter a number.")
-                                
+                            
             except ValueError:
                 print("Invalid input. Please enter a number.")
+    if not return_data:
+        if graph == 'variance':
+            analyze_block_variance(dose_list, rad, radtime, radlength, photon, time, detector,rate_list)
 
-    if graph == 'variance':
-        analyze_block_variance(dose_list, rad, radtime, radlength, photon, time, detector)
-
-    if graph=='photon': #while loop for multiple window adjustments 
-        g=0
-        start=0
-        end=listlength
-        while g == 0:
-            total_photon_graph(datanum)
-            # zoom controls
-            z = 0
-            while z == 0:
-                zoom = input('Would you like to adjust window? ')
-                if zoom == 'Yes' or zoom == 'yes' or zoom == 'Y' or zoom == 'YES' or zoom == 'y':
-                    s = 0
-                    e = 0
-                    z = 1
-                elif zoom == 'NO' or zoom == 'no' or zoom == 'No' or zoom == 'N' or zoom == 'n':
-                    s = 1
-                    g = 1  # This will exit the outer while loop
-                    z = 1
-                    e = 1
-                else:
-                    print('input not understood')
-
-            while s == 0:
-                inone = input('Input start time (time value): ')
-                try:
-                    start_time_val = int(inone)
-                    if start_time_val in time:
-                        start = time.index(start_time_val)
+        if graph=='photon': #while loop for multiple window adjustments 
+            g=0
+            start=0
+            end=listlength
+            while g == 0:
+                total_photon_graph(datanum)
+                # zoom controls
+                z = 0
+                while z == 0:
+                    zoom = input('Would you like to adjust window? ')
+                    if zoom == 'Yes' or zoom == 'yes' or zoom == 'Y' or zoom == 'YES' or zoom == 'y':
+                        s = 0
+                        e = 0
+                        z = 1
+                    elif zoom == 'NO' or zoom == 'no' or zoom == 'No' or zoom == 'N' or zoom == 'n':
                         s = 1
-                    else:
-                        print('invalid start time')
-                except:
-                    print('invalid start time')
-                    
-            while e == 0:
-                intwo = input('Input end time (time value): ')
-                try:
-                    end_time_val = int(intwo)
-                    if end_time_val in time and end_time_val >= time[start]:
-                        end = time.index(end_time_val)
+                        g = 1  # This will exit the outer while loop
+                        z = 1
                         e = 1
                     else:
-                        print('invalid end time')
-                except:
-                    print('invalid end time')
+                        print('input not understood')
 
-    if graph=='dose':
-        dose(dose_list,rad)
+                while s == 0:
+                    inone = input('Input start time (time value): ')
+                    try:
+                        start_time_val = int(inone)
+                        if start_time_val in time:
+                            start = time.index(start_time_val)
+                            s = 1
+                        else:
+                            print('invalid start time')
+                    except:
+                        print('invalid start time')
+                        
+                while e == 0:
+                    intwo = input('Input end time (time value): ')
+                    try:
+                        end_time_val = int(intwo)
+                        if end_time_val in time and end_time_val >= time[start]:
+                            end = time.index(end_time_val)
+                            e = 1
+                        else:
+                            print('invalid end time')
+                    except:
+                        print('invalid end time')
+
+        if graph=='dose':
+            dose(dose_list,rad)
     
-    # make .txt file 
-    output_path = rf'C:\Users\lukes\Videos\Captures\radiation_data_{datanum}.txt'
-    with open(output_path, 'w') as f:
-        f.write(f"{'Start':^8} {'Irradiation':^13} {'Dose':^10} {'Total':^12} {'Max':^10}\n")
-        f.write(f"{'time':^8} {'time(sec)':^13} {'':^10} {'Photons':^12} {'Photons':^10}\n")
-        f.write("-" * 55 + "\n")       
-        min_len = min(len(radtime), len(radlength), len(dose_list), len(rad), len(radmax))      
-        for i in range(min_len):
-            s = radtime[i]
-            l = radlength[i]
-            d = dose_list[i] if i < len(dose_list) else 0
-            t = rad[i]
-            m = radmax[i]           
-            f.write(f"{s:>8} {l:>13} {d:>10.2f} {t:>12.2f} {m:>10.2f}\n")
+    if return_data:
+        return rad, dose_list, radtime, radlength, radmax, photon, time
+    else:
+        # make .txt file 
+        output_path = rf'C:\Users\lukes\Videos\Captures\radiation_data_{datanum}.txt'
+        with open(output_path, 'w') as f:
+            f.write(f"{'Start':^8} {'Irradiation':^13} {'Dose':^10} {'Total':^12} {'Max':^10}\n")
+            f.write(f"{'time':^8} {'time(sec)':^13} {'':^10} {'Photons':^12} {'Photons':^10}\n")
+            f.write("-" * 55 + "\n")       
+            min_len = min(len(radtime), len(radlength), len(dose_list), len(rad), len(radmax))      
+            for i in range(min_len):
+                s = radtime[i]
+                l = radlength[i]
+                d = dose_list[i] if i < len(dose_list) else 0
+                t = rad[i]
+                m = radmax[i]           
+                f.write(f"{s:>8} {l:>13} {d:>10.2f} {t:>12.2f} {m:>10.2f}\n")
+
+def collect_dose_data(dose_list, rad, detector):
+    """Collect dose response data without plotting"""
+        
+    if detector == 1:
+        blocks = [
+            {'name': 'Energy: 244.1(MeV), Dose Rate: 1.7(Gy/s)', 'start': 0, 'end': 14},
+            {'name': 'Energy: 208.8(MeV), Dose Rate: 0.56(Gy/s)', 'start': 14, 'end': 29},
+            {'name': 'Energy: 162.8(MeV), Dose Rate: 0.3(Gy/s)', 'start': 29, 'end': 44},
+            {'name': 'Energy: 244.1(MeV), Dose Rate: 1.1(Gy/s)', 'start': 44, 'end': 62},
+            {'name': 'Energy: 244.1(MeV), Dose Rate: 0.44(Gy/s)', 'start': 62, 'end': 81},
+        ]
+    elif detector == 2:
+        blocks = [
+            {'name': 'Energy: 244(MeV), Dose Rate: 1.7(Gy/s)', 'start': 0, 'end': 21},
+            {'name': 'Energy: 208.8(MeV), Dose Rate: 0.56(Gy/s)', 'start': 21, 'end': 36},
+            {'name': 'Energy: 162(MeV), Dose Rate: 0.3(Gy/s)', 'start': 36, 'end': 51},
+            {'name': 'Energy: 244(MeV), Dose Rate: 1.1(Gy/s)', 'start': 51, 'end': 69},
+            {'name': 'Energy: 244(MeV), Dose Rate: 0.44(Gy/s)', 'start': 69, 'end': 85},
+        ]
+    else:  # detector == 3
+        blocks = [
+            {'name': 'Energy: 244(MeV), Dose Rate: 1.7(Gy/s)', 'start': 0, 'end': 21},
+            {'name': 'Energy: 208.8(MeV), Dose Rate: 0.56(Gy/s)', 'start': 21, 'end': 36},
+            {'name': 'Energy: 162(MeV), Dose Rate: 0.3(Gy/s)', 'start': 36, 'end': 52},
+            {'name': 'Energy: 244(MeV), Dose Rate: 1.1(Gy/s)', 'start': 52, 'end': 70},
+            {'name': 'Energy: 244(MeV), Dose Rate: 0.44(Gy/s)', 'start': 70, 'end': 85},
+        ]
+        
+    all_blocks_data = []
+    
+    for block in blocks:
+        start = block['start']
+        end = block['end']
+        block_doses = dose_list[start:end]
+        block_rad = rad[start:end]
+            
+        # Average repeated doses
+        unique_doses = []
+        averaged_photons = []
+            
+        seen = {}
+        order = []
+            
+        for i, d in enumerate(block_doses):
+            if d not in seen:
+                seen[d] = []
+                order.append(d)
+            seen[d].append(block_rad[i])
+            
+        for dose_value in order:
+            unique_doses.append(dose_value)
+            avg = sum(seen[dose_value]) / len(seen[dose_value])
+            averaged_photons.append(avg)
+            
+        all_blocks_data.append({
+            'name': block['name'],
+            'doses': unique_doses,
+            'photons': averaged_photons
+        })
+        
+    return all_blocks_data
+    
+def compare_detectors():
+    # Get data for Detector 1
+    print("Processing Detector 1...")
+    rad_det1, dose_list_det1, _, _, _, _, _ = main(1, 3000, 0.25, 2, '6', 0, 5000, 'variance', return_data=True)
+    
+    # Get data for Detector 2
+    print("Processing Detector 2...")
+    rad_det2, dose_list_det2, _, _, _, _, _ = main(2, 3000, 0.25, 2, '11', 940, 3650, 'variance', return_data=True)
+    
+    # Get data for Detector 3
+    print("Processing Detector 3...")
+    rad_det3, dose_list_det3, _, _, _, _, _ = main(3, 760, 0.40, 2, '12', 4560, 6570, 'variance', return_data=True)
+    
+    # Collect dose response data
+    detector1_data = collect_dose_data(dose_list_det1, rad_det1, detector=1)
+    detector2_data = collect_dose_data(dose_list_det2, rad_det2, detector=2)
+    detector3_data = collect_dose_data(dose_list_det3, rad_det3, detector=3)
+    
+    # Block names
+    blocks = [
+        'Block 1: Energy: 244.1(MeV), Dose Rate: 1.7(Gy/s)',
+        'Block 2: Energy: 208.8(MeV), Dose Rate: 0.56(Gy/s)',
+        'Block 3: Energy: 162.8(MeV), Dose Rate: 0.3(Gy/s)',
+        'Block 4: Energy: 244.1(MeV), Dose Rate: 1.1(Gy/s)',
+        'Block 5: Energy: 244.1(MeV), Dose Rate: 0.44(Gy/s)'
+    ]
+    
+    while True:
+        print("\n" + "="*60)
+        print("DETECTOR COMPARISON MENU")
+        print("="*60)
+        for i, block in enumerate(blocks):
+            print(f"  {i+1}. {block}")
+        print("  0. View all blocks (one after another)")
+        print("  q. Return to main menu")
+        print("="*60)
+        
+        choice = input("Select a block to view (1-5, 0 for all, or q to quit): ")
+        
+        if choice.lower() == 'q':
+            break
+        
+        try:
+            block_choice = int(choice)
+            
+            if block_choice == 0:
+                # View all blocks one after another
+                for block_idx in range(5):
+                    plt.figure(figsize=(10, 6))
+                    
+                    d1 = detector1_data[block_idx]
+                    d2 = detector2_data[block_idx]
+                    d3 = detector3_data[block_idx]
+                    
+                    plt.plot(d1['doses'], d1['photons'], 'bo-', linewidth=2, markersize=6, label='Detector 1')
+                    plt.plot(d2['doses'], d2['photons'], 'ro-', linewidth=2, markersize=6, label='Detector 2')
+                    plt.plot(d3['doses'], d3['photons'], 'go-', linewidth=2, markersize=6, label='Detector 3')
+                    
+                    plt.xlabel('Dose (Gy)', fontsize=12)
+                    plt.ylabel('Total Photons', fontsize=12)
+                    plt.title(blocks[block_idx], fontsize=12, fontweight='bold')
+                    plt.grid(True, alpha=0.3)
+                    plt.legend(fontsize=10)
+                    plt.ticklabel_format(axis='y', style='sci', scilimits=(0,0))
+                    plt.tight_layout()
+                    plt.show()
+                    
+                    if block_idx < 4:
+                        input("Press Enter to view next block...")
+                        
+            elif 1 <= block_choice <= 5:
+                block_idx = block_choice - 1
+                plt.figure(figsize=(10, 6))
+                
+                d1 = detector1_data[block_idx]
+                d2 = detector2_data[block_idx]
+                d3 = detector3_data[block_idx]
+                
+                plt.plot(d1['doses'], d1['photons'], 'bo-', linewidth=2, markersize=6, label='Detector 1')
+                plt.plot(d2['doses'], d2['photons'], 'ro-', linewidth=2, markersize=6, label='Detector 2')
+                plt.plot(d3['doses'], d3['photons'], 'go-', linewidth=2, markersize=6, label='Detector 3')
+                
+                plt.xlabel('Dose (Gy)', fontsize=12)
+                plt.ylabel('Total Photons', fontsize=12)
+                plt.title(blocks[block_idx], fontsize=12, fontweight='bold')
+                plt.grid(True, alpha=0.3)
+                plt.legend(fontsize=10)
+                plt.ticklabel_format(axis='y', style='sci', scilimits=(0,0))
+                plt.tight_layout()
+                plt.show()
+            else:
+                print("Invalid choice. Please enter 1-5, 0, or q.")
+                
+        except ValueError:
+            print("Invalid input. Please enter a number or 'q'.")
 
 def run():
     while True:
@@ -662,11 +881,13 @@ def run():
         print("="*60)
         print("1. Select Detector 1 (Data 6)")
         print("2. Select Detector 2 (Data 11)")
+        print('3. Select Detector 3 (Data 12)')
+        print('4. Compare detectors')
         print("0. Exit")
         print("="*60)
         
         try:
-            detector_choice = int(input("Select detector (1, 2, 3, or 0 to exit): "))
+            detector_choice = int(input("Select detector (1, 2, 3, 4, or 0 to exit): "))
             
             if detector_choice == 0:
                 print("Exiting program.")
@@ -686,6 +907,9 @@ def run():
                 time_start=4560
                 time_end=6570
                 detector=3
+            elif detector_choice==4:
+                compare_detectors()
+                continue
             else:
                 print("Invalid choice. Please select 1, 2, 3, or 0.")
                 continue
@@ -709,21 +933,21 @@ def run():
                     elif graph_choice == 1:
                         graph_type = 'photon'
                         if detector==3:
-                            main(detector, 760, 0.4, 2, datanum, time_start, time_end, graph_type)
+                            main(detector, 760, 0.4, 2, datanum, time_start, time_end, graph_type,False)
                         else:
-                            main(detector, 1000, 0.25, 2, datanum, time_start, time_end, graph_type)
+                            main(detector, 1000, 0.25, 2, datanum, time_start, time_end, graph_type,False)
                     elif graph_choice == 2:
                         graph_type = 'dose'
                         if detector==3:
-                            main(detector, 760, 0.40, 2, datanum, time_start, time_end, graph_type)
+                            main(detector, 760, 0.40, 2, datanum, time_start, time_end, graph_type,False)
                         else:
-                            main(detector, 3000, 0.25, 2, datanum, time_start, time_end, graph_type)
+                            main(detector, 3000, 0.25, 2, datanum, time_start, time_end, graph_type,False)
                     elif graph_choice == 3:
                         graph_type = 'variance'
                         if detector==3:
-                            main(detector, 760, 0.40, 2, datanum, time_start, time_end, graph_type)
+                            main(detector, 760, 0.40, 2, datanum, time_start, time_end, graph_type,False)
                         else:
-                            main(detector, 3000, 0.25, 2, datanum, time_start, time_end, graph_type)
+                            main(detector, 3000, 0.25, 2, datanum, time_start, time_end, graph_type,False)                      
                     else:
                         print("Invalid choice. Please select 0-3.")
                 except ValueError:
