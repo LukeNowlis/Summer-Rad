@@ -138,7 +138,7 @@ def main(rad_start, end_percent):
                         
                         # === Find points above 90% of max ===
                         max_photon = max(event_photons)
-                        ninety_percent_threshold = max_photon * 0.9
+                        ninety_percent_threshold = max_photon * 0.95
                         high_times = []
                         high_photons = []
                         
@@ -237,7 +237,7 @@ def main(rad_start, end_percent):
             
             # Find the last point above 90% threshold
             max_photon = max(event_photons)
-            ninety_percent_threshold = max_photon * 0.9
+            ninety_percent_threshold = max_photon * 0.95
             last_high_idx = None
             for i in range(len(event_photons) - 1, -1, -1):
                 if event_photons[i] >= ninety_percent_threshold:
@@ -345,32 +345,36 @@ def main(rad_start, end_percent):
                     transform=plt.gca().transAxes, fontsize=10,
                     bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
         
+        # Add padding to axes so it's not zoomed in too tightly
+        x_min = min(ninety_lengths) - 1
+        x_max = max(ninety_lengths) + 1
+        y_min = min(afterglow_lengths) - 1
+        y_max = max(afterglow_lengths) + 1
+        
+        # Ensure axes start at 0 or slightly below
+        if x_min > 0:
+            x_min = 0
+        if y_min > 0:
+            y_min = 0
+        
+        plt.xlim(x_min, x_max)
+        plt.ylim(y_min, y_max)
+        
         plt.xlabel('Length of 90% List (number of points above 90% of max)', fontsize=12)
         plt.ylabel('Length of Afterglow Effect (number of points tracked after last 90% point)', fontsize=12)
         plt.title('90% List Length vs Afterglow Length', fontsize=14, fontweight='bold')
         plt.grid(True, alpha=0.3)
         plt.tight_layout()
         plt.show()
-        
-        # Print summary statistics
-        print("\n" + "="*60)
-        print("SUMMARY STATISTICS")
-        print("="*60)
-        print(f"Number of events: {len(ninety_lengths)}")
-        print(f"Average 90% list length: {np.mean(ninety_lengths):.2f}")
-        print(f"Average afterglow length: {np.mean(afterglow_lengths):.2f}")
-        if len(ninety_lengths) > 1:
-            print(f"Correlation coefficient: {correlation:.3f}")
-        print("="*60)
 
     def analyze_all_detectors_afterglow(rad_start, end_percent):
         detectors = [
-        {'name': 'Big Yellow', 'file': 'Large Yellow powder'},
-        {'name': 'Med Yellow', 'file': 'Medium yellow powder'},
-        {'name': 'Small Yellow', 'file': 'small yellow powder'},
-        {'name': 'Big White', 'file': 'Large white powder'},
-        {'name': 'Med White', 'file': 'medium White'},
-        {'name': 'Small White', 'file': 'small white med'}
+        {'name': 'O Big yellow', 'file': 'O Big yellow'},
+        {'name': 'O med yellow', 'file': 'O med yellow'},
+        {'name': 'O small yellow', 'file': 'O small yellow'},
+        {'name': 'O Big White', 'file': 'O Big White'},
+        {'name': 'O med White', 'file': 'O med White'},
+        {'name': 'O small White', 'file': 'O small White'}
     ]
     
         avg_afterglow_times = []
@@ -389,7 +393,7 @@ def main(rad_start, end_percent):
             end = listlength
             ninety_percent_photon_value = total_photon_graph(detector['name'], start, end, time, photon_adjusted, radtime, radlength, rad, plot=False)
             
-            threshold_value = avg_noise + 2000
+            threshold_value = avg_noise + 50
             afterglow = after_glow(photon_adjusted, time, radtime, radlength, ninety_percent_photon_value, threshold_value)
             
             # Calculate average afterglow time for this detector
@@ -442,6 +446,7 @@ def main(rad_start, end_percent):
         plt.xticks(rotation=45, ha='right')
         plt.grid(True, alpha=0.3, axis='y')
         plt.tight_layout()
+        plt.gcf().set_facecolor('lightgray')
         plt.show()
         
         # Print summary table
@@ -456,6 +461,131 @@ def main(rad_start, end_percent):
         
         return detector_labels, avg_afterglow_times
     
+    def time_varience(time, photon, radtime, radlength, photon_adjusted):
+        
+        # Sort events by duration
+        sorted_events = sorted([(radlength[idx], idx) for idx in range(len(radtime))])
+        
+        # Group events that are within 3 seconds of each other
+        duration_groups = []
+        current_group = []
+        current_threshold = None
+        
+        for duration, idx in sorted_events:
+            if current_threshold is None:
+                current_group = [idx]
+                current_threshold = duration + 3
+            elif duration <= current_threshold:
+                current_group.append(idx)
+            else:
+                # Start a new group
+                duration_groups.append(current_group)
+                current_group = [idx]
+                current_threshold = duration + 3
+        
+        # Add the last group
+        if current_group:
+            duration_groups.append(current_group)
+        
+        # Filter groups with more than 1 event
+        duration_groups = [group for group in duration_groups if len(group) > 1]
+        
+        if not duration_groups:
+            print("No groups with multiple events within 3 seconds of each other.")
+            return
+        
+        # Print summary of groups
+        print("\n" + "="*60)
+        print("RADIATION EVENT DURATION GROUPS (within 3 seconds)")
+        print("="*60)
+        for i, group in enumerate(duration_groups):
+            durations = [radlength[idx] for idx in group]
+            print(f"Group {i+1}: {len(group)} events, durations: {durations}")
+        print("="*60)
+        
+        # Create subplots
+        num_groups = len(duration_groups)
+        cols = min(2, num_groups)
+        rows = (num_groups + cols - 1) // cols
+        
+        fig, axes = plt.subplots(rows, cols, figsize=(12, 4 * rows))
+        if num_groups == 1:
+            axes = [axes]
+        else:
+            axes = axes.flatten()
+        
+        for ax_idx, group in enumerate(duration_groups):
+            if ax_idx >= len(axes):
+                break
+            
+            ax = axes[ax_idx]
+            
+            # Get average duration for title
+            avg_duration = np.mean([radlength[idx] for idx in group])
+            
+            # Plot each event in this group
+            for idx in group:
+                start_time = radtime[idx]
+                start_idx = time.index(start_time)
+                end_idx = start_idx + radlength[idx]
+                
+                event_time = time[start_idx:end_idx+1]
+                event_photon = photon_adjusted[start_idx:end_idx+1]
+                relative_time = [t - start_time for t in event_time]
+                
+                ax.plot(relative_time, event_photon, 
+                        marker='o', linestyle='-', linewidth=1.5, markersize=3,
+                        alpha=0.7, label=f'Event {idx+1} ({radlength[idx]}s)')
+            
+            ax.set_xlabel('Time from Start (s)', fontsize=10)
+            ax.set_ylabel('Photon Intensity', fontsize=10)
+            ax.set_title(f'Group {ax_idx+1}: Avg Duration = {avg_duration:.1f}s ({len(group)} events)', 
+                        fontsize=11, fontweight='bold')
+            ax.grid(True, alpha=0.3)
+            ax.legend(fontsize=7)
+            ax.ticklabel_format(axis='y', style='sci', scilimits=(0,0))
+        
+        # Hide empty subplots
+        for ax_idx in range(num_groups, len(axes)):
+            axes[ax_idx].set_visible(False)
+        
+        plt.tight_layout()
+        plt.show()
+        
+        # Ask if user wants to see individual groups in detail
+        try:
+            choice = input("\nEnter a group number to view it separately (or 0 to skip): ")
+            if choice.isdigit():
+                group_num = int(choice)
+                if 1 <= group_num <= len(duration_groups):
+                    group = duration_groups[group_num - 1]
+                    
+                    plt.figure(figsize=(10, 6))
+                    for idx in group:
+                        start_time = radtime[idx]
+                        start_idx = time.index(start_time)
+                        end_idx = start_idx + radlength[idx]
+                        
+                        event_time = time[start_idx:end_idx+1]
+                        event_photon = photon_adjusted[start_idx:end_idx+1]
+                        relative_time = [t - start_time for t in event_time]
+                        
+                        plt.plot(relative_time, event_photon, 
+                                marker='o', linestyle='-', linewidth=2, markersize=5,
+                                alpha=0.7, label=f'Event {idx+1} ({radlength[idx]}s)')
+                    
+                    plt.xlabel('Time from Start (s)', fontsize=12)
+                    plt.ylabel('Photon Intensity', fontsize=12)
+                    plt.title(f'Group {group_num}: {len(group)} events with similar durations', 
+                            fontsize=14, fontweight='bold')
+                    plt.grid(True, alpha=0.3)
+                    plt.legend(fontsize=9)
+                    plt.ticklabel_format(axis='y', style='sci', scilimits=(0,0))
+                    plt.tight_layout()
+                    plt.show()
+        except:
+            pass
+
     t_run=0
     while t_run==0:
         print('================')
@@ -476,22 +606,22 @@ def main(rad_start, end_percent):
                 break
             elif detector_choice == 1:
                 datanum = detector_choice
-                time, photon = get_exel_data('Large Yellow powder')
+                time, photon = get_exel_data('O Big yellow')
             elif detector_choice == 2:
                 datanum = detector_choice
-                time, photon = get_exel_data('Medium yellow powder')
+                time, photon = get_exel_data('O med yellow')
             elif detector_choice == 3:
                 datanum = detector_choice
-                time, photon = get_exel_data('small yellow powder')
+                time, photon = get_exel_data('O small yellow')
             elif detector_choice == 4:
                 datanum = detector_choice
-                time, photon = get_exel_data('Large white powder')
+                time, photon = get_exel_data('O Big White')
             elif detector_choice == 5:
                 datanum = detector_choice
-                time, photon = get_exel_data('medium White')
+                time, photon = get_exel_data('O med White')
             elif detector_choice == 6:
                 datanum = detector_choice
-                time, photon = get_exel_data('small white med')
+                time, photon = get_exel_data('O small White')
             elif detector_choice==7:
                 avg_times = analyze_all_detectors_afterglow(rad_start=2000, end_percent=0.25)
                 continue
@@ -537,7 +667,7 @@ def main(rad_start, end_percent):
                     print("="*80)
 
                     # Print afterglow results
-                    afterglow = after_glow(photon_adjusted, time, radtime, radlength, ninety_percent_photon_value, avg_noise+2000)
+                    afterglow = after_glow(photon_adjusted, time, radtime, radlength, ninety_percent_photon_value, avg_noise+50)
                     print("\n" + "="*80)
                     print("AFTERGLOW ANALYSIS (Tracking until 5% of 90% Avg)")
                     print("="*80)
@@ -559,10 +689,13 @@ def main(rad_start, end_percent):
                     # time vs_afterglow
                     #plot_90_vs_afterglow(ninety_percent_photon_value, afterglow)
 
+                    #varience amongst similar times 
+                    time_varience(time, photon, radtime, radlength, photon_adjusted)
+
                     first_run = False  # Set flag to False after first run
                 else:
                     # Just show the graph without printing stats
-                    total_photon_graph(datanum)
+                    total_photon_graph(datanum, start, end, time, photon, radtime, radlength, rad, plot=True)
                 
                 # zoom controls
                 z = 0
