@@ -45,6 +45,9 @@ def main(rad_start, end_percent):
             if photon[i+1] - photon[i] > rad_start:
                 a_run=1
         avg_noise=(sum(avg))/len(avg)
+        noise_std = np.std(avg)
+        noise_length=len(avg)
+
         for i in range(len(photon)):
             photon_adjusted[i]=max(photon[i]-avg_noise,0)
         photon=photon_adjusted
@@ -102,7 +105,7 @@ def main(rad_start, end_percent):
                     
                     for k in range(length):
                         skiplist.append(i + k)
-        return radtime, rad, radlength, radmax, photon_adjusted, avg_noise
+        return radtime, rad, radlength, radmax, photon_adjusted, avg_noise, noise_std, noise_length
 
     #graph data
     def total_photon_graph(datanum, start, end, time, photon, radtime, radlength, rad, plot=True):
@@ -267,17 +270,17 @@ def main(rad_start, end_percent):
                     
                     # Add to rolling window
                     rolling_window.append(photon_val)
-                    if len(rolling_window) > 5:
+                    if len(rolling_window) > 3:
                         rolling_window.pop(0)  # Keep only last 5
                     
                     # Calculate rolling average if we have at least 5 values
-                    if len(rolling_window) >= 5:
+                    if len(rolling_window) >= 3:
                         rolling_average = sum(rolling_window) / len(rolling_window)
                     else:
                         rolling_average = photon_val  # Use current value if less than 5 points
                     
                     # Stop if rolling average drops below threshold AND we have at least 5 points
-                    if len(rolling_window) >= 5 and rolling_average < threshold:
+                    if len(rolling_window) >= 3 and rolling_average < threshold:
                         break
                     
                     current_idx += 1
@@ -369,14 +372,15 @@ def main(rad_start, end_percent):
 
     def analyze_all_detectors_afterglow(rad_start, end_percent):
         detectors = [
-        {'name': 'O Big yellow', 'file': 'O Big yellow'},
-        {'name': 'O med yellow', 'file': 'O med yellow'},
-        {'name': 'O small yellow', 'file': 'O small yellow'},
-        {'name': 'O Big White', 'file': 'O Big White'},
-        {'name': 'O med White', 'file': 'O med White'},
-        {'name': 'O small White', 'file': 'O small White'}
-    ]
-    
+            {'name': 'Big yellow', 'file': 'O Big yellow'},
+            {'name': 'med yellow', 'file': 'O med yellow'},
+            {'name': 'small yellow', 'file': 'O small yellow'},
+            {'name': 'Big White', 'file': 'O Big White'},
+            {'name': 'med White', 'file': 'O med White'},
+            {'name': 'small White', 'file': 'O small White'},
+            {'name': 'Control', 'file': 'control'}
+        ]
+        
         avg_afterglow_times = []
         detector_labels = []
         
@@ -386,8 +390,8 @@ def main(rad_start, end_percent):
             time, photon = get_exel_data(detector['file'])
             
             listlength = len(photon)
-            radtime, rad, radlength, radmax, photon_adjusted, avg_noise = data_scan(
-                photon, time, listlength, rad_start, end_percent)
+            radtime, rad, radlength, radmax, photon_adjusted, avg_noise, noise_std, noise_length = data_scan(
+    photon, time, listlength, rad_start, end_percent)
             
             start = 0
             end = listlength
@@ -428,25 +432,29 @@ def main(rad_start, end_percent):
             print(f"  Average afterglow time: {avg_afterglow_times[-1]:.2f} seconds")
         
         # Create bar graph
-        plt.figure(figsize=(12, 6))
-        bars = plt.bar(detector_labels, avg_afterglow_times, color='skyblue', edgecolor='navy', linewidth=1.5)
+        plt.figure(figsize=(14, 7))
+        
+        # Use different colors for each bar, with control in a distinct color
+        colors = ["#524D01", "#8E9504", "#EEFF01", "#000000", "#7D7D7D", "#F7F7F7", "#FF6B6B"]
+        bars = plt.bar(detector_labels, avg_afterglow_times, color=colors[:len(detectors)], edgecolor='black', linewidth=1.2, width=0.6)
         
         # Add value labels on top of bars
         for bar, value in zip(bars, avg_afterglow_times):
             if value > 0:
                 plt.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.05,
-                        f'{value:.2f}s', ha='center', va='bottom', fontsize=10)
+                        f'{value:.2f}s', ha='center', va='bottom', fontsize=10, fontweight='bold')
             else:
                 plt.text(bar.get_x() + bar.get_width()/2, 0.05,
                         'No data', ha='center', va='bottom', fontsize=9, rotation=90)
         
-        plt.xlabel('Detector', fontsize=12)
-        plt.ylabel('Average Afterglow Time (seconds)', fontsize=12)
-        plt.title('Average Afterglow Time by Detector', fontsize=14, fontweight='bold')
-        plt.xticks(rotation=45, ha='right')
+        plt.xlabel('Detector', fontsize=13, fontweight='bold')
+        plt.ylabel('Average Afterglow Time (seconds)', fontsize=13, fontweight='bold')
+        plt.title('Average Afterglow Time by Detector', fontsize=15, fontweight='bold')
+        plt.xticks(rotation=45, ha='right', fontsize=10)
         plt.grid(True, alpha=0.3, axis='y')
-        plt.tight_layout()
+        plt.gca().set_facecolor("#7ac5cf8e")
         plt.gcf().set_facecolor('lightgray')
+        plt.tight_layout()
         plt.show()
         
         # Print summary table
@@ -586,6 +594,142 @@ def main(rad_start, end_percent):
         except:
             pass
 
+    def comapre_std(rad_start, end_percent):       
+        detectors = [
+            {'name': 'Big yellow', 'file': 'O Big yellow'},
+            {'name': 'med yellow', 'file': 'O med yellow'},
+            {'name': 'small yellow', 'file': 'O small yellow'},
+            {'name': 'Big White', 'file': 'O Big White'},
+            {'name': 'med White', 'file': 'O med White'},
+            {'name': 'small White', 'file': 'O small White'},
+            {'name': 'Control', 'file': 'control'}  # NEW: Added control detector
+        ]
+        
+        all_results = []
+        
+        for detector in detectors:
+            print(f"\nProcessing {detector['name']}...")
+            
+            # Get data from Excel
+            time, photon = get_exel_data(detector['file'])
+            
+            listlength = len(photon)
+            
+            # Run data_scan to get the adjusted photon data
+            radtime, rad, radlength, radmax, photon_adjusted, avg_noise, noise_std, noise_length = data_scan(
+                photon, time, listlength, rad_start, end_percent)
+            
+            # Run total_photon_graph to get 90% photon values (plot=False so it doesn't show the graph)
+            start = 0
+            end = listlength
+            ninety_percent_photon_value = total_photon_graph(
+                detector['name'], start, end, time, photon_adjusted, radtime, radlength, rad, plot=False)
+            
+            # Calculate statistics for 90% values
+            ninety_counts = []
+            ninety_avgs = []
+            ninety_stds = []
+            std_percents = []
+            
+            for event in ninety_percent_photon_value:
+                count = event['count']
+                avg = event['average']
+                photons = event['photons']
+                
+                ninety_counts.append(count)
+                ninety_avgs.append(avg)
+                
+                if len(photons) > 1:
+                    std_dev = np.std(photons)
+                else:
+                    std_dev = 0
+                ninety_stds.append(std_dev)
+                
+                # Calculate std as percentage of average for this event
+                if avg > 0:
+                    std_percent = (std_dev / avg) * 100
+                else:
+                    std_percent = 0
+                std_percents.append(std_percent)
+            
+            # Calculate averages across all events for this detector
+            if ninety_avgs:
+                avg_ninety_count = np.mean(ninety_counts)
+                avg_ninety_avg = np.mean(ninety_avgs)
+                avg_ninety_std = np.mean(ninety_stds)
+                avg_std_percent = np.mean(std_percents)
+            else:
+                avg_ninety_count = 0
+                avg_ninety_avg = 0
+                avg_ninety_std = 0
+                avg_std_percent = 0
+            
+            # Store results for this detector
+            result = {
+                'name': detector['name'],
+                'file': detector['file'],
+                'radtime': radtime,
+                'rad': rad,
+                'radlength': radlength,
+                'radmax': radmax,
+                'photon_adjusted': photon_adjusted,
+                'avg_noise': avg_noise,
+                'noise_std': noise_std,
+                'noise_length': noise_length,
+                'num_events': len(radtime),
+                'ninety_percent_photon_value': ninety_percent_photon_value,
+                'ninety_counts': ninety_counts,
+                'ninety_avgs': ninety_avgs,
+                'ninety_stds': ninety_stds,
+                'std_percents': std_percents,
+                'avg_ninety_count': avg_ninety_count,
+                'avg_ninety_avg': avg_ninety_avg,
+                'avg_ninety_std': avg_ninety_std,
+                'avg_std_percent': avg_std_percent
+            }
+            
+            all_results.append(result)
+        
+        # Print summary table
+        print("\n" + "="*100)
+        print("ALL DETECTORS PHOTON VALUES SUMMARY")
+        print("="*100)
+        print(f"{'Detector':<20} {'Events':<8} {'Laser On Photon Avg':<22} {'Laser STD':<15} {'STD/Avg %':<12}")
+        print("-"*100)
+
+        for result in all_results:
+            print(f"{result['name']:<20} {result['num_events']:<8} {result['avg_ninety_avg']:<22.2f} {result['avg_ninety_std']:<15.2f} {result['avg_std_percent']:<12.2f}%")
+        print("="*100)
+
+        # Create bar graph showing STD/Avg % for each detector
+        plt.figure(figsize=(14, 7))
+        
+        names = [r['name'] for r in all_results]
+        std_percents = [r['avg_std_percent'] for r in all_results]
+        
+        # Create bars with different colors (including control)
+        colors = ["#524D01", "#8E9504", "#EEFF01", "#000000", "#7D7D7D", "#F7F7F7", "#FF6B6B"]
+        bars = plt.bar(names, std_percents, color=colors[:len(names)], edgecolor='black', linewidth=1.2, width=0.6)
+        
+        # Add value labels on top of bars
+        for bar, value in zip(bars, std_percents):
+            plt.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.5,
+                    f'{value:.2f}%', ha='center', va='bottom', fontsize=11, fontweight='bold')
+        
+        # Customize the graph
+        plt.xlabel('Detector', fontsize=13, fontweight='bold')
+        plt.ylabel('STD / Average (%)', fontsize=13, fontweight='bold')
+        plt.title('Laser on Variation (STD/Avg %) by Detector', fontsize=15, fontweight='bold')
+        plt.xticks(rotation=45, ha='right', fontsize=10)
+        plt.yticks(fontsize=10)
+        plt.grid(True, alpha=0.3, axis='y')   
+        plt.gca().set_facecolor("#7ac5cf8e")
+        plt.gcf().set_facecolor('lightgray')     
+        plt.tight_layout()
+        plt.show()
+        
+        return all_results
+
     t_run=0
     while t_run==0:
         print('================')
@@ -596,10 +740,12 @@ def main(rad_start, end_percent):
         print('5: Med White')
         print('6: Small White')
         print('7: compare detectors')
+        print('8: control')
+        print('9: compare STD')
         print('=================')
 
         try:
-            detector_choice = int(input("Select data set  (1, 2, 3, 4, 5, 6, 7, or 0 to exit): "))
+            detector_choice = int(input("Select data set  (1, 2, 3, 4, 5, 6, 7, 8, 9, or 0 to exit): "))
             
             if detector_choice == 0:
                 print("Exiting program.")
@@ -625,12 +771,18 @@ def main(rad_start, end_percent):
             elif detector_choice==7:
                 avg_times = analyze_all_detectors_afterglow(rad_start=2000, end_percent=0.25)
                 continue
+            elif detector_choice==8:
+                datanum=detector_choice
+                time, photon = get_exel_data('control')
+            elif detector_choice==9:
+                comapre_std(rad_start=2000, end_percent=0.25)
+                continue
             else:
                 print("Invalid choice. Please select 1-6 or 0 to exit.")
                 continue
 
             listlength = len(photon)
-            radtime, rad, radlength, radmax, photon_adjusted, avg_noise = data_scan(
+            radtime, rad, radlength, radmax, photon_adjusted, avg_noise, noise_std, noise_length = data_scan(
     photon, time, listlength, rad_start, end_percent)
 
             # Initialize flag for first run
@@ -644,11 +796,16 @@ def main(rad_start, end_percent):
                 # Only print stats and afterglow on the first run
                 if first_run:
                     ninety_percent_photon_value = total_photon_graph( datanum, start, end, time, photon_adjusted, radtime, radlength, rad, plot=True)
+                    print('STD for the noise',noise_std)
                     print("\n" + "="*80)
-                    print(f"90% PHOTON VALUES ANALYSIS")
+                    print(f"PHOTON VALUES ANALYSIS")
                     print("="*80)
-                    print(f"{'Event':<8} {'Start Time':<12} {'90% Count':<12} {'90% Avg':<15} {'90% Std Dev':<15}")
+                    print(f"{'Event':<8} {'Start Time':<12} {'length':<12} {'Avg value':<15} {'Std Dev':<15}{'Std as %':<13}")
                     print("-"*80)
+                    
+                    noise_percent=(noise_std / avg_noise) * 100
+
+                    print(f"{'noise':<8} {0:<12} {noise_length:<12} {avg_noise:<15.2f} {noise_std:<15.2f} {noise_percent:<12.2f}%")
 
                     for event in ninety_percent_photon_value:
                         event_num = event['event_index'] + 1
@@ -663,7 +820,13 @@ def main(rad_start, end_percent):
                         else:
                             std_dev = 0
                         
-                        print(f"{event_num:<8} {start_time:<12} {count:<12} {avg:<15.2f} {std_dev:<15.2f}")
+                            # Calculate std as percentage of average
+                        if avg > 0:
+                            std_percent = (std_dev / avg) * 100
+                        else:
+                            std_percent = 0
+                        
+                        print(f"{event_num:<8} {start_time:<12} {count:<12} {avg:<15.2f} {std_dev:<15.2f} {std_percent:<12.2f}%")
                     print("="*80)
 
                     # Print afterglow results
@@ -690,7 +853,7 @@ def main(rad_start, end_percent):
                     #plot_90_vs_afterglow(ninety_percent_photon_value, afterglow)
 
                     #varience amongst similar times 
-                    time_varience(time, photon, radtime, radlength, photon_adjusted)
+                    #time_varience(time, photon, radtime, radlength, photon_adjusted)
 
                     first_run = False  # Set flag to False after first run
                 else:
